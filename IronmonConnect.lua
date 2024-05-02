@@ -91,9 +91,34 @@ local function IronmonConnect()
 		return GameSettings.game == 3
 	end
 
-	function self.resetSeedVars()
+	function self.updateSeedVars()
 		local V = self.seedVariables
-		V.Checkpoint = Checkpoints.LAB
+
+		if self.isPlayingFRLG() then
+			V.DefeatedFirstTrainer = Progression.DefeatedFirstTrainer
+			V.DefeatedRocketHideout = Progression.DefeatedRocketHideout
+			V.DefeatedSilph = Progression.DefeatedSilph
+			V.DefeatedRival1 = Progression.DefeatedRival1
+			V.DefeatedRival2 = Progression.DefeatedRival2
+			V.DefeatedRival3 = Progression.DefeatedRival3
+			V.DefeatedRival4 = Progression.DefeatedRival4
+			V.DefeatedRival5 = Progression.DefeatedRival5
+			V.DefeatedRival6 = Progression.DefeatedRival6
+			V.DefeatedRival7 = Progression.DefeatedRival7
+			V.DefeatedChamp = Progression.DefeatedChamp
+			V.DefeatedBrock = Progression.DefeatedBrock
+			V.DefeatedMisty = Progression.DefeatedMisty
+			V.DefeatedSurge = Progression.DefeatedSurge
+			V.DefeatedErika = Progression.DefeatedErika
+			V.DefeatedKoga = Progression.DefeatedKoga
+			V.DefeatedSabrina = Progression.DefeatedSabrina
+			V.DefeatedBlaine = Progression.DefeatedBlaine
+			V.DefeatedGiovanni = Progression.DefeatedGiovanni
+			V.DefeatedLorelai = Progression.DefeatedLorelai
+			V.DefeatedBruno = Progression.DefeatedBruno
+			V.DefeatedAgatha = Progression.DefeatedAgatha
+			V.DefeatedLance = Progression.DefeatedLance
+		end
 	end
 
   -- Enumerations 
@@ -162,6 +187,10 @@ local function IronmonConnect()
 		local V = self.seedVariables
 		local checkpoint
 
+		if not Progression.DefeatedRival1 then
+			checkpoint = Checkpoints.LAB
+			console.log("> IMC: Back to the Lab.")
+		end
 		if not V.Progression.DefeatedRival1 and Progression.DefeatedRival1 then
 			checkpoint = Checkpoints.RIVAL1
 			V.Progression.DefeatedRival1 = true
@@ -337,23 +366,13 @@ local function IronmonConnect()
 		if not self.isPlayingFRLG() or not Program.isValidMapLocation() then
 			return
 		elseif not loadedVarsThisSeed then
-			self.resetSeedVars()
+			self.updateSeedVars()
 			loadedVarsThisSeed = true
 			console.log("> IMC: Seed variables reset.")
 		end
 
 		self.handleCheckpoint()
-
-		local V = self.seedVariables		
-
-		-- Set up HP% variable for use in the following conditions.
-		local hpPercent = getHpPercent()
-
-		-- The lead pokemon has died and the run will be reset.
-		if hpPercentage ~= nil and hpPercentage == 0 and V.pokemonDead == false then
-			console.log("> IMC: Pokemon has fainted.")
-			V.pokemonDead = true
-		end
+		self.updateSeedVars()
 	end
 
 	-- Executed once every 30 frames, after any battle related data from game memory is read in
