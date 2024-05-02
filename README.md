@@ -45,7 +45,12 @@ server.listen(8080, () => {
 });
 ```
 
+## Impelementation Notes
 
+The messages sent to the external system are categorized into multiple types:
+
+* `seed` - A new seed has been generated.
+* `checkpoint` - A checkpoint has been reached.
 
 ## Credits
 
