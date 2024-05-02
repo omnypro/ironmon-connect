@@ -1,17 +1,10 @@
--- This is a template for a custom code extension for the Ironmon Tracker.
--- To use, first rename both this top-most function and the return value at the bottom: "CodeExtensionTemplate" -> "YourFileNameHere"
--- Then fill in each function you want to use with the code you want executed during Tracker runtime.
--- The name, author, and description attribute fields are used by the Tracker to identify this extension, please always include them.
--- You can safely remove unused functions; they won't be called.
-
-local function CodeExtensionTemplate()
-	-- Define descriptive attributes of the custom extension that are displayed on the Tracker settings
+local function IronmonConnect()
 	local self = {}
-	self.version = "1.0"
-	self.name = "My Fancy Extension"
-	self.author = "My Username"
-	self.description = "This is a template file for my fancy custom code extension."
-	self.github = "MyUsername/ExtensionRepo" -- Replace "MyUsername" and "ExtensionRepo" to match your GitHub repo url, if any
+	self.version = "0.1"
+	self.name = "Ironmon Connect"
+	self.author = "Omnyist Productions"
+	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
+	self.github = "omnypro/ironmon-connect"
 	self.url = string.format("https://github.com/%s", self.github or "") -- Remove this attribute if no host website available for this extension
 
 	--------------------------------------
@@ -90,14 +83,6 @@ local function CodeExtensionTemplate()
 		-- [ADD CODE HERE]
 	end
 
-	-- [MGBA only] Executed each frame (60 frames per second)
-	-- CAUTION: Avoid unnecessary calculations here, as this can easily affect performance.
-	function self.inputCheckMGBA()
-		-- Uncomment to use, otherwise leave commented out
-			-- local joypadButtons = Input.getJoypadInputFormatted()
-		-- [ADD CODE HERE]
-	end
-
 	-- Executed each frame of the game loop, after most data from game memory is read in but before any natural redraw events occur
 	-- CAUTION: Avoid code here if possible, as this can easily affect performance. Most Tracker updates occur at 30-frame intervals, some at 10-frame.
 	function self.afterEachFrame()
@@ -106,4 +91,4 @@ local function CodeExtensionTemplate()
 
 	return self
 end
-return CodeExtensionTemplate
+return IronmonConnect
