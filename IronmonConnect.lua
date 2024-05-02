@@ -91,36 +91,6 @@ local function IronmonConnect()
 		return GameSettings.game == 3
 	end
 
-	function self.updateSeedVars()
-		local V = self.seedVariables
-
-		if self.isPlayingFRLG() then
-			V.DefeatedFirstTrainer = Progression.DefeatedFirstTrainer
-			V.DefeatedRocketHideout = Progression.DefeatedRocketHideout
-			V.DefeatedSilph = Progression.DefeatedSilph
-			V.DefeatedRival1 = Progression.DefeatedRival1
-			V.DefeatedRival2 = Progression.DefeatedRival2
-			V.DefeatedRival3 = Progression.DefeatedRival3
-			V.DefeatedRival4 = Progression.DefeatedRival4
-			V.DefeatedRival5 = Progression.DefeatedRival5
-			V.DefeatedRival6 = Progression.DefeatedRival6
-			V.DefeatedRival7 = Progression.DefeatedRival7
-			V.DefeatedChamp = Progression.DefeatedChamp
-			V.DefeatedBrock = Progression.DefeatedBrock
-			V.DefeatedMisty = Progression.DefeatedMisty
-			V.DefeatedSurge = Progression.DefeatedSurge
-			V.DefeatedErika = Progression.DefeatedErika
-			V.DefeatedKoga = Progression.DefeatedKoga
-			V.DefeatedSabrina = Progression.DefeatedSabrina
-			V.DefeatedBlaine = Progression.DefeatedBlaine
-			V.DefeatedGiovanni = Progression.DefeatedGiovanni
-			V.DefeatedLorelai = Progression.DefeatedLorelai
-			V.DefeatedBruno = Progression.DefeatedBruno
-			V.DefeatedAgatha = Progression.DefeatedAgatha
-			V.DefeatedLance = Progression.DefeatedLance
-		end
-	end
-
   -- Enumerations 
 	Checkpoints = enum {
 		"LAB",
@@ -185,12 +155,12 @@ local function IronmonConnect()
 
 	function self.handleCheckpoint()
 		local V = self.seedVariables
-		local checkpoint
+		local checkpoint = Checkpoints.LAB
 
-		if not Progression.DefeatedRival1 then
-			checkpoint = Checkpoints.LAB
-			console.log("> IMC: Back to the Lab.")
-		end
+		-- if not Progression.DefeatedRival1 then
+		-- 	checkpoint = Checkpoints.LAB
+		-- 	console.log("> IMC: Back to the Lab.")
+		-- end
 		if not V.Progression.DefeatedRival1 and Progression.DefeatedRival1 then
 			checkpoint = Checkpoints.RIVAL1
 			V.Progression.DefeatedRival1 = true
@@ -310,11 +280,41 @@ local function IronmonConnect()
 		-- Notify the server of the current Checkpoint.
 		if V.Checkpoint ~= checkpoint then
 			local payload = {
-				["type"] = "Checkpoint",
-				["Checkpoint"] = checkpoint
+				["type"] = "checkpoint",
+				["checkpoint"] = checkpoint
 			}
 			send(payload)
 			V.Checkpoint = checkpoint
+		end
+	end
+
+	function self.updateSeedVars()
+		local V = self.seedVariables
+
+		if self.isPlayingFRLG() then
+			V.DefeatedFirstTrainer = Progression.DefeatedFirstTrainer
+			V.DefeatedRocketHideout = Progression.DefeatedRocketHideout
+			V.DefeatedSilph = Progression.DefeatedSilph
+			V.DefeatedRival1 = Progression.DefeatedRival1
+			V.DefeatedRival2 = Progression.DefeatedRival2
+			V.DefeatedRival3 = Progression.DefeatedRival3
+			V.DefeatedRival4 = Progression.DefeatedRival4
+			V.DefeatedRival5 = Progression.DefeatedRival5
+			V.DefeatedRival6 = Progression.DefeatedRival6
+			V.DefeatedRival7 = Progression.DefeatedRival7
+			V.DefeatedChamp = Progression.DefeatedChamp
+			V.DefeatedBrock = Progression.DefeatedBrock
+			V.DefeatedMisty = Progression.DefeatedMisty
+			V.DefeatedSurge = Progression.DefeatedSurge
+			V.DefeatedErika = Progression.DefeatedErika
+			V.DefeatedKoga = Progression.DefeatedKoga
+			V.DefeatedSabrina = Progression.DefeatedSabrina
+			V.DefeatedBlaine = Progression.DefeatedBlaine
+			V.DefeatedGiovanni = Progression.DefeatedGiovanni
+			V.DefeatedLorelai = Progression.DefeatedLorelai
+			V.DefeatedBruno = Progression.DefeatedBruno
+			V.DefeatedAgatha = Progression.DefeatedAgatha
+			V.DefeatedLance = Progression.DefeatedLance
 		end
 	end
 
