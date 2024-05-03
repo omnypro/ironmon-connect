@@ -1,17 +1,17 @@
 local function IronmonConnect()
 	local self = {}
-	self.version = "0.8"
+	self.version = "0.9"
 	self.name = "Ironmon Connect"
 	self.author = "Omnyist Productions"
 	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
 	self.github = "omnypro/ironmon-connect"
-	self.url = string.format("https://github.com/%s", self.github or "") -- Remove this attribute if no host website available for this extension
+	self.url = string.format("https://github.com/%s", self.github or "")
 
 	--------------------------------------
 	-- INTERNAL SCRIPT FUNCTIONS BELOW
 	--------------------------------------
 
-  -- Enumerations 
+  -- Checkpoint Data 
 	local Checkpoints = {
 		"LAB",
 		"RIVAL1",
@@ -82,7 +82,10 @@ local function IronmonConnect()
 	local function sendCheckpointNotification(checkpoint)
 		local payload = {
 			["type"] = "checkpoint",
-			["number"] = checkpoint
+			["metadata"] = {
+				["number"] = self.currentCheckpointIndex,
+				["name"] = checkpoint,
+			},
 		}
 		send(payload)
 	end
@@ -106,7 +109,7 @@ local function IronmonConnect()
 			self.checkpointsNotified[nextCheckpoint] = true
 			self.currentCheckpointIndex = self.currentCheckpointIndex + 1  -- Move to the next checkpoint
 			self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]  -- Update the current checkpoint
-			console.log("> IMC: Checkpoint reached: " .. self.currentCheckpointIndex .. " | " .. self.currentCheckpoint)
+			console.log("> IMC: Next checkpoint: " .. self.currentCheckpointIndex .. " > " .. self.currentCheckpoint)
 		end
 	end
 
@@ -157,8 +160,10 @@ local function IronmonConnect()
 		-- Output an init message to help verify things are working on that end.
 		local payload = {
 			["type"] = "init",
-			["version"] = self.version,
-			["game"] = GameSettings.game,
+			["metadata"] = {
+				["version"] = self.version,
+				["game"] = GameSettings.game,
+			},
 		}
 		send(payload)
 
