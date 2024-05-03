@@ -1,6 +1,6 @@
 local function IronmonConnect()
 	local self = {}
-	self.version = "0.5"
+	self.version = "0.6"
 	self.name = "Ironmon Connect"
 	self.author = "Omnyist Productions"
 	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
