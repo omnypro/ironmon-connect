@@ -7,42 +7,6 @@ local function IronmonConnect()
 	self.github = "omnypro/ironmon-connect"
 	self.url = string.format("https://github.com/%s", self.github or "") -- Remove this attribute if no host website available for this extension
 
-	-- Program-Specific Variables
-
-	self.seed = nil
-	self.seedVariables = {
-		["Checkpoint"] = nil,
-		["pokemonDead"] = false,
-		["Progression"] = {
-			["DefeatedFirstTrainer"] = false,
-			["DefeatedRocketHideout"] = false,
-			["DefeatedSilph"] = false,
-			["DefeatedRival1"] = false,
-			["DefeatedRival2"] = false,
-			["DefeatedRival3"] = false,
-			["DefeatedRival4"] = false,
-			["DefeatedRival5"] = false,
-			["DefeatedRival6"] = false,
-			["DefeatedRival7"] = false,
-			["DefeatedChamp"] = false,
-			["DefeatedBrock"] = false,
-			["DefeatedMisty"] = false,
-			["DefeatedSurge"] = false,
-			["DefeatedErika"] = false,
-			["DefeatedKoga"] = false,
-			["DefeatedSabrina"] = false,
-			["DefeatedBlaine"] = false,
-			["DefeatedGiovanni"] = false,
-			["DefeatedLorelai"] = false,
-			["DefeatedBruno"] = false,
-			["DefeatedAgatha"] = false,
-			["DefeatedLance"] = false
-		}
-	}
-
-	-- To properly determine when new items are acquired, need to load them in first at least once.
-	local loadedVarsThisSeed
-
 	--------------------------------------
 	-- HELPER FUNCTIONS BELOW
 	--------------------------------------
@@ -153,128 +117,164 @@ local function IronmonConnect()
     DefeatedLance = Program.hasDefeatedTrainer(413) or Program.hasDefeatedTrainer(738)
 	}
 
+	self.seed = nil
+	self.seedVariables = {
+		["Checkpoint"] = nil,
+		["Progression"] = {
+			["DefeatedFirstTrainer"] = false,
+			["DefeatedRocketHideout"] = false,
+			["DefeatedSilph"] = false,
+			["DefeatedRival1"] = false,
+			["DefeatedRival2"] = false,
+			["DefeatedRival3"] = false,
+			["DefeatedRival4"] = false,
+			["DefeatedRival5"] = false,
+			["DefeatedRival6"] = false,
+			["DefeatedRival7"] = false,
+			["DefeatedChamp"] = false,
+			["DefeatedBrock"] = false,
+			["DefeatedMisty"] = false,
+			["DefeatedSurge"] = false,
+			["DefeatedErika"] = false,
+			["DefeatedKoga"] = false,
+			["DefeatedSabrina"] = false,
+			["DefeatedBlaine"] = false,
+			["DefeatedGiovanni"] = false,
+			["DefeatedLorelai"] = false,
+			["DefeatedBruno"] = false,
+			["DefeatedAgatha"] = false,
+			["DefeatedLance"] = false
+		}
+	}
+
+	function self.updateSeedVars()
+		local V = self.seedVariables
+
+		if self.isPlayingFRLG() then
+			V.Progression.DefeatedFirstTrainer = Progression.DefeatedFirstTrainer
+			V.Progression.DefeatedRocketHideout = Progression.DefeatedRocketHideout
+			V.Progression.DefeatedSilph = Progression.DefeatedSilph
+			V.Progression.DefeatedRival1 = Progression.DefeatedRival1
+			V.Progression.DefeatedRival2 = Progression.DefeatedRival2
+			V.Progression.DefeatedRival3 = Progression.DefeatedRival3
+			V.Progression.DefeatedRival4 = Progression.DefeatedRival4
+			V.Progression.DefeatedRival5 = Progression.DefeatedRival5
+			V.Progression.DefeatedRival6 = Progression.DefeatedRival6
+			V.Progression.DefeatedRival7 = Progression.DefeatedRival7
+			V.Progression.DefeatedChamp = Progression.DefeatedChamp
+			V.Progression.DefeatedBrock = Progression.DefeatedBrock
+			V.Progression.DefeatedMisty = Progression.DefeatedMisty
+			V.Progression.DefeatedSurge = Progression.DefeatedSurge
+			V.Progression.DefeatedErika = Progression.DefeatedErika
+			V.Progression.DefeatedKoga = Progression.DefeatedKoga
+			V.Progression.DefeatedSabrina = Progression.DefeatedSabrina
+			V.Progression.DefeatedBlaine = Progression.DefeatedBlaine
+			V.Progression.DefeatedGiovanni = Progression.DefeatedGiovanni
+			V.Progression.DefeatedLorelai = Progression.DefeatedLorelai
+			V.Progression.DefeatedBruno = Progression.DefeatedBruno
+			V.Progression.DefeatedAgatha = Progression.DefeatedAgatha
+			V.Progression.DefeatedLance = Progression.DefeatedLance
+		end
+	end
+
 	function self.handleCheckpoint()
 		local V = self.seedVariables
-		local checkpoint = Checkpoints.LAB
+		local checkpoint
 
-		-- if not Progression.DefeatedRival1 then
-		-- 	checkpoint = Checkpoints.LAB
-		-- 	console.log("> IMC: Back to the Lab.")
-		-- end
+		if not Progression.DefeatedRival1 then
+			checkpoint = Checkpoints.LAB
+		end
 		if not V.Progression.DefeatedRival1 and Progression.DefeatedRival1 then
 			checkpoint = Checkpoints.RIVAL1
 			V.Progression.DefeatedRival1 = true
-			console.log("> IMC: Defeated Rival 1.")
 		end
 		if not V.Progression.DefeatedFirstTrainer and Progression.DefeatedFirstTrainer then
 			checkpoint = Checkpoints.FIRSTTRAINER
 			V.Progression.DefeatedFirstTrainer = true
-			console.log("> IMC: Defeated First Trainer.")
 		end
 		if not V.Progression.DefeatedRival2 and Progression.DefeatedRival2 then
 			checkpoint = Checkpoints.RIVAL2
 			V.Progression.DefeatedRival2 = true
-			console.log("> IMC: Defeated Rival 2.")
 		end
-		if not V.DefeatedBrock and Progression.DefeatedBrock then
+		if not V.Progression.DefeatedBrock and Progression.DefeatedBrock then
 			checkpoint = Checkpoints.BROCK
-			V.DefeatedBrock = true
-			console.log("> IMC: Defeated Brock.")
+			V.Progression.DefeatedBrock = true
 		end
-		if not V.DefeatedRival3 and Progression.DefeatedRival3 then
+		if not V.Progression.DefeatedRival3 and Progression.DefeatedRival3 then
 			checkpoint = Checkpoints.RIVAL3
-			V.DefeatedRival3 = true
-			console.log("> IMC: Defeated Rival 3.")
+			V.Progression.DefeatedRival3 = true
 		end
-		if not V.DefeatedRival4 and Progression.DefeatedRival4 then
+		if not V.Progression.DefeatedRival4 and Progression.DefeatedRival4 then
 			checkpoint = Checkpoints.RIVAL4
-			V.DefeatedRival4 = true
-			console.log("> IMC: Defeated Rival 4.")
+			V.Progression.DefeatedRival4 = true
 		end
-		if not V.DefeatedMisty and Progression.DefeatedMisty then
+		if not V.Progression.DefeatedMisty and Progression.DefeatedMisty then
 			checkpoint = Checkpoints.MISTY
-			V.DefeatedMisty = true
-			console.log("> IMC: Defeated Misty.")
+			V.Progression.DefeatedMisty = true
 		end
-		if not V.DefeatedSurge and Progression.DefeatedSurge then
+		if not V.Progression.DefeatedSurge and Progression.DefeatedSurge then
 			checkpoint = Checkpoints.SURGE
-			V.DefeatedSurge = true
-			console.log("> IMC: Defeated Surge.")
+			V.Progression.DefeatedSurge = true
 		end
-		if not V.DefeatedRival5 and Progression.DefeatedRival5 then
+		if not V.Progression.DefeatedRival5 and Progression.DefeatedRival5 then
 			checkpoint = Checkpoints.RIVAL5
-			V.DefeatedRival5 = true
-			console.log("> IMC: Defeated Rival 5.")
+			V.Progression.DefeatedRival5 = true
 		end
-		if not V.DefeatedRocketHideout and Progression.DefeatedRocketHideout then
+		if not V.Progression.DefeatedRocketHideout and Progression.DefeatedRocketHideout then
 			checkpoint = Checkpoints.ROCKETHIDEOUT
-			V.DefeatedRocketHideout = true
-			console.log("> IMC: Defeated Rocket Hideout.")
+			V.Progression.DefeatedRocketHideout = true
 		end
-		if not V.DefeatedErika and Progression.DefeatedErika then
+		if not V.Progression.DefeatedErika and Progression.DefeatedErika then
 			checkpoint = Checkpoints.ERIKA
-			V.DefeatedErika = true
-			console.log("> IMC: Defeated Erika.")
+			V.Progression.DefeatedErika = true
 		end
-		if not V.DefeatedKoga and Progression.DefeatedKoga then
+		if not V.Progression.DefeatedKoga and Progression.DefeatedKoga then
 			checkpoint = Checkpoints.KOGA
-			V.DefeatedKoga = true
-			console.log("> IMC: Defeated Koga.")
+			V.Progression.DefeatedKoga = true
 		end
-		if not V.DefeatedRival6 and Progression.DefeatedRival6 then
+		if not V.Progression.DefeatedRival6 and Progression.DefeatedRival6 then
 			checkpoint = Checkpoints.RIVAL6
-			V.DefeatedRival6 = true
-			console.log("> IMC: Defeated Rival 6.")
+			V.Progression.DefeatedRival6 = true
 		end
-		if not V.DefeatedSilph and Progression.DefeatedSilph then
+		if not V.Progression.DefeatedSilph and Progression.DefeatedSilph then
 			checkpoint = Checkpoints.SILPHCO
-			V.DefeatedSilph = true
-			console.log("> IMC: Defeated Silph Co.")
+			V.Progression.DefeatedSilph = true
 		end
-		if not V.DefeatedSabrina and Progression.DefeatedSabrina then
+		if not V.Progression.DefeatedSabrina and Progression.DefeatedSabrina then
 			checkpoint = Checkpoints.SABRINA
-			V.DefeatedSabrina = true
-			console.log("> IMC: Defeated Sabrina.")
+			V.Progression.DefeatedSabrina = true
 		end
-		if not V.DefeatedBlaine and Progression.DefeatedBlaine then
+		if not V.Progression.DefeatedBlaine and Progression.DefeatedBlaine then
 			checkpoint = Checkpoints.BLAINE
-			V.DefeatedBlaine = true
-			console.log("> IMC: Defeated Blaine.")
+			V.Progression.DefeatedBlaine = true
 		end
-		if not V.DefeatedGiovanni and Progression.DefeatedGiovanni then
+		if not V.Progression.DefeatedGiovanni and Progression.DefeatedGiovanni then
 			checkpoint = Checkpoints.GIOVANNI
-			V.DefeatedGiovanni = true
-			console.log("> IMC: Defeated Giovanni.")
+			V.Progression.DefeatedGiovanni = true
 		end
-		if not V.DefeatedRival7 and Progression.DefeatedRival7 then
+		if not V.Progression.DefeatedRival7 and Progression.DefeatedRival7 then
 			checkpoint = Checkpoints.RIVAL7
-			V.DefeatedRival7 = true
-			console.log("> IMC: Defeated Rival 7.")
+			V.Progression.DefeatedRival7 = true
 		end
-		if not V.DefeatedLorelai and Progression.DefeatedLorelai then
+		if not V.Progression.DefeatedLorelai and Progression.DefeatedLorelai then
 			checkpoint = Checkpoints.LORELAI
-			V.DefeatedLorelai = true
-			console.log("> IMC: Defeated Lorelai.")
+			V.Progression.DefeatedLorelai = true
 		end
-		if not V.DefeatedBruno and Progression.DefeatedBruno then
+		if not V.Progression.DefeatedBruno and Progression.DefeatedBruno then
 			checkpoint = Checkpoints.BRUNO
-			V.DefeatedBruno = true
-			console.log("> IMC: Defeated Bruno.")
+			V.Progression.DefeatedBruno = true
 		end
-		if not V.DefeatedAgatha and Progression.DefeatedAgatha then
+		if not V.Progression.DefeatedAgatha and Progression.DefeatedAgatha then
 			checkpoint = Checkpoints.AGATHA
-			V.DefeatedAgatha = true
-			console.log("> IMC: Defeated Agatha.")
+			V.Progression.DefeatedAgatha = true
 		end
-		if not V.DefeatedLance and Progression.DefeatedLance then
+		if not V.Progression.DefeatedLance and Progression.DefeatedLance then
 			checkpoint = Checkpoints.LANCE
-			V.DefeatedLance = true
-			console.log("> IMC: Defeated Lance.")
+			V.Progression.DefeatedLance = true
 		end
-		if not V.DefeatedChamp and Progression.DefeatedChamp then
+		if not V.Progression.DefeatedChamp and Progression.DefeatedChamp then
 			checkpoint = Checkpoints.CHAMP
-			V.DefeatedChamp = true
-			console.log("> IMC: Defeated the Champion.")
+			V.Progression.DefeatedChamp = true
 		end
 
 		-- Notify the server of the current Checkpoint.
@@ -284,43 +284,19 @@ local function IronmonConnect()
 				["checkpoint"] = checkpoint
 			}
 			send(payload)
+
+			console.log("> IMC: Checkpoint has changed to " .. checkpoint .. ".")
 			V.Checkpoint = checkpoint
 		end
 	end
 
-	function self.updateSeedVars()
-		local V = self.seedVariables
-
-		if self.isPlayingFRLG() then
-			V.DefeatedFirstTrainer = Progression.DefeatedFirstTrainer
-			V.DefeatedRocketHideout = Progression.DefeatedRocketHideout
-			V.DefeatedSilph = Progression.DefeatedSilph
-			V.DefeatedRival1 = Progression.DefeatedRival1
-			V.DefeatedRival2 = Progression.DefeatedRival2
-			V.DefeatedRival3 = Progression.DefeatedRival3
-			V.DefeatedRival4 = Progression.DefeatedRival4
-			V.DefeatedRival5 = Progression.DefeatedRival5
-			V.DefeatedRival6 = Progression.DefeatedRival6
-			V.DefeatedRival7 = Progression.DefeatedRival7
-			V.DefeatedChamp = Progression.DefeatedChamp
-			V.DefeatedBrock = Progression.DefeatedBrock
-			V.DefeatedMisty = Progression.DefeatedMisty
-			V.DefeatedSurge = Progression.DefeatedSurge
-			V.DefeatedErika = Progression.DefeatedErika
-			V.DefeatedKoga = Progression.DefeatedKoga
-			V.DefeatedSabrina = Progression.DefeatedSabrina
-			V.DefeatedBlaine = Progression.DefeatedBlaine
-			V.DefeatedGiovanni = Progression.DefeatedGiovanni
-			V.DefeatedLorelai = Progression.DefeatedLorelai
-			V.DefeatedBruno = Progression.DefeatedBruno
-			V.DefeatedAgatha = Progression.DefeatedAgatha
-			V.DefeatedLance = Progression.DefeatedLance
-		end
-	end
 
 	--------------------------------------
 	-- INTENRAL TRACKER FUNCTIONS BELOW
 	--------------------------------------
+
+	-- To properly determine when new items are acquired, need to load them in first at least once.
+	local loadedVarsThisSeed
 
 	-- Executed when the user clicks the "Check for Updates" button while viewing the extension details within the Tracker's UI
 	-- Returns [true, downloadUrl] if an update is available (downloadUrl auto opens in browser for user); otherwise returns [false, downloadUrl]
@@ -357,11 +333,6 @@ local function IronmonConnect()
 
 	-- Executed once every 30 frames, after most data from game memory is read in
 	function self.afterProgramDataUpdate()
-		-- Check the seed number and inform the server it if it has changed.
-		if self.seed ~= Main.currentSeed then
-			handleSeed()
-		end
-
 		-- Once per seed, when the player is able to move their character, initiate the seed data.
 		if not self.isPlayingFRLG() or not Program.isValidMapLocation() then
 			return
