@@ -13,9 +13,9 @@ local function IronmonConnect()
 
 	local function enum(tbl)
 		local length = #tbl
-		for i = 1, length do
-			local v = tbl[i]
-			tbl[v] = i
+		for i = 0, length - 1 do
+			local v = tbl[i + 1]
+			tbl[v] = i3
 		end
 
 		return tbl
@@ -313,7 +313,7 @@ local function IronmonConnect()
 
 	-- Executed only once: When the extension is enabled by the user, and/or when the Tracker first starts up, after it loads all other required files and code
 	function self.startup()
-		console.log(string.format("> IMC: (v%s) successfully loaded.", self.version))
+		console.log(string.format("> IMC: Version %s successfully loaded.", self.version))
 		console.log("> IMC: Connected to server: " .. comm.socketServerGetInfo())
 
 		-- Output an init message to help verify things are working on that end.
