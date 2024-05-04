@@ -39,34 +39,6 @@ local function IronmonConnect()
 		"CHAMP"
 	}
 
-	-- Progression Flags
-	local Progression = {
-		LAB = true,
-		RIVAL1 = Program.hasDefeatedTrainer(326) or Program.hasDefeatedTrainer(327) or Program.hasDefeatedTrainer(328),
-		FIRSTTRAINER = Program.hasDefeatedTrainer(102) or Program.hasDefeatedTrainer(115),
-		RIVAL2 = Program.hasDefeatedTrainer(329) or Program.hasDefeatedTrainer(330) or Program.hasDefeatedTrainer(331),
-		BROCK = Program.hasDefeatedTrainer(414),
-		RIVAL3 = Program.hasDefeatedTrainer(332) or Program.hasDefeatedTrainer(333) or Program.hasDefeatedTrainer(334),
-		RIVAL4 = Program.hasDefeatedTrainer(426) or Program.hasDefeatedTrainer(427) or Program.hasDefeatedTrainer(428),
-		MISTY = Program.hasDefeatedTrainer(415),
-		SURGE = Program.hasDefeatedTrainer(416),
-		RIVAL5 = Program.hasDefeatedTrainer(429) or Program.hasDefeatedTrainer(430) or Program.hasDefeatedTrainer(431),
-		ROCKETHIDEOUT = Program.hasDefeatedTrainer(348),
-		ERIKA = Program.hasDefeatedTrainer(417),
-		KOGA = Program.hasDefeatedTrainer(418),
-		RIVAL6 = Program.hasDefeatedTrainer(432) or Program.hasDefeatedTrainer(433) or Program.hasDefeatedTrainer(434),
-		SILPHCO = Program.hasDefeatedTrainer(349),
-		SABRINA = Program.hasDefeatedTrainer(420),
-		BLAINE = Program.hasDefeatedTrainer(419),
-		GIOVANNI = Program.hasDefeatedTrainer(350),
-		RIVAL7 = Program.hasDefeatedTrainer(435) or Program.hasDefeatedTrainer(436) or Program.hasDefeatedTrainer(437),
-		LORELAI = Program.hasDefeatedTrainer(410) or Program.hasDefeatedTrainer(735),
-		BRUNO = Program.hasDefeatedTrainer(411) or Program.hasDefeatedTrainer(736),
-		AGATHA = Program.hasDefeatedTrainer(412) or Program.hasDefeatedTrainer(737),
-		LANCE = Program.hasDefeatedTrainer(413) or Program.hasDefeatedTrainer(738),
-		CHAMP = Program.hasDefeatedTrainer(438) or Program.hasDefeatedTrainer(439) or Program.hasDefeatedTrainer(440)
-	}
-
 	-- Variables
 	self.currentCheckpointIndex = 1
 	self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]
@@ -101,6 +73,34 @@ local function IronmonConnect()
 	end
 
 	function self.handleCheckpoint()
+		-- Progression Flags
+		local Progression = {
+			LAB = true,
+			RIVAL1 = Program.hasDefeatedTrainer(326) or Program.hasDefeatedTrainer(327) or Program.hasDefeatedTrainer(328),
+			FIRSTTRAINER = Program.hasDefeatedTrainer(102) or Program.hasDefeatedTrainer(115),
+			RIVAL2 = Program.hasDefeatedTrainer(329) or Program.hasDefeatedTrainer(330) or Program.hasDefeatedTrainer(331),
+			BROCK = Program.hasDefeatedTrainer(414),
+			RIVAL3 = Program.hasDefeatedTrainer(332) or Program.hasDefeatedTrainer(333) or Program.hasDefeatedTrainer(334),
+			RIVAL4 = Program.hasDefeatedTrainer(426) or Program.hasDefeatedTrainer(427) or Program.hasDefeatedTrainer(428),
+			MISTY = Program.hasDefeatedTrainer(415),
+			SURGE = Program.hasDefeatedTrainer(416),
+			RIVAL5 = Program.hasDefeatedTrainer(429) or Program.hasDefeatedTrainer(430) or Program.hasDefeatedTrainer(431),
+			ROCKETHIDEOUT = Program.hasDefeatedTrainer(348),
+			ERIKA = Program.hasDefeatedTrainer(417),
+			KOGA = Program.hasDefeatedTrainer(418),
+			RIVAL6 = Program.hasDefeatedTrainer(432) or Program.hasDefeatedTrainer(433) or Program.hasDefeatedTrainer(434),
+			SILPHCO = Program.hasDefeatedTrainer(349),
+			SABRINA = Program.hasDefeatedTrainer(420),
+			BLAINE = Program.hasDefeatedTrainer(419),
+			GIOVANNI = Program.hasDefeatedTrainer(350),
+			RIVAL7 = Program.hasDefeatedTrainer(435) or Program.hasDefeatedTrainer(436) or Program.hasDefeatedTrainer(437),
+			LORELAI = Program.hasDefeatedTrainer(410) or Program.hasDefeatedTrainer(735),
+			BRUNO = Program.hasDefeatedTrainer(411) or Program.hasDefeatedTrainer(736),
+			AGATHA = Program.hasDefeatedTrainer(412) or Program.hasDefeatedTrainer(737),
+			LANCE = Program.hasDefeatedTrainer(413) or Program.hasDefeatedTrainer(738),
+			CHAMP = Program.hasDefeatedTrainer(438) or Program.hasDefeatedTrainer(439) or Program.hasDefeatedTrainer(440)
+		}
+
 		local nextCheckpoint = Checkpoints[self.currentCheckpointIndex]
 		local condition = Progression[nextCheckpoint]
 
