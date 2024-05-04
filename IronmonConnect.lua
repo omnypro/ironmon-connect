@@ -119,8 +119,10 @@ local function IronmonConnect()
 
 		local seed = {
 			["type"] = "seed",
-			["number"] = Main.currentSeed
-		}		
+			["metadata"] = {
+				["number"] = Main.currentSeed
+			}
+		}
 		send(seed)
 	end
 
