@@ -1,11 +1,13 @@
 local function IronmonConnect()
 	local self = {}
-	self.version = "0.9"
+	self.version = "1.0"
 	self.name = "Ironmon Connect"
 	self.author = "Omnyist Productions"
 	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
 	self.github = "omnypro/ironmon-connect"
 	self.url = string.format("https://github.com/%s", self.github or "")
+
+	self.seed = nil
 
 	--------------------------------------
 	-- INTERNAL SCRIPT FUNCTIONS BELOW
@@ -43,7 +45,6 @@ local function IronmonConnect()
 	self.currentCheckpointIndex = 1
 	self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]
 	self.checkpointsNotified = {}
-	self.seed = nil
 
 	-- Functions
 	local function send(data)
@@ -62,10 +63,6 @@ local function IronmonConnect()
 		send(payload)
 	end
 	
-	function self.isPlayingFRLG()
-		return GameSettings.game == 3
-	end
-
 	function self.initializeCheckpoints()
 		for checkpoint, _ in pairs(Checkpoints) do
 			self.checkpointsNotified[checkpoint] = false
@@ -113,6 +110,14 @@ local function IronmonConnect()
 		end
 	end
 
+	--------------------------------------
+	-- INTENRAL TRACKER FUNCTIONS BELOW
+	--------------------------------------
+
+	function self.isPlayingFRLG()
+		return GameSettings.game == 3
+	end
+
 	function self.handleSeed() 
 		self.seed = Main.currentSeed
 		console.log("> IMC: Seed number has changed to " .. self.seed .. ".")
@@ -133,10 +138,6 @@ local function IronmonConnect()
 		self.checkpointsNotified = {}
 		self.seed = nil
 	end
-
-	--------------------------------------
-	-- INTENRAL TRACKER FUNCTIONS BELOW
-	--------------------------------------
 
 	-- To properly determine when new items are acquired, need to load them in first at least once.
 	local loadedVarsThisSeed
