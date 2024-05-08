@@ -1,6 +1,6 @@
 local function IronmonConnect()
 	local self = {}
-	self.version = "1.0"
+	self.version = "1.1"
 	self.name = "Ironmon Connect"
 	self.author = "Omnyist Productions"
 	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
@@ -56,7 +56,7 @@ local function IronmonConnect()
 		local payload = {
 			["type"] = "checkpoint",
 			["metadata"] = {
-				["number"] = self.currentCheckpointIndex,
+				["id"] = self.currentCheckpointIndex,
 				["name"] = checkpoint,
 			},
 		}
@@ -120,12 +120,12 @@ local function IronmonConnect()
 
 	function self.handleSeed() 
 		self.seed = Main.currentSeed
-		console.log("> IMC: Seed number has changed to " .. self.seed .. ".")
+		console.log("> IMC: Seed number is now " .. self.seed .. ".")
 
 		local seed = {
 			["type"] = "seed",
 			["metadata"] = {
-				["number"] = Main.currentSeed
+				["count"] = Main.currentSeed
 			}
 		}
 		send(seed)
