@@ -102,11 +102,11 @@ local function IronmonConnect()
 		local condition = Progression[nextCheckpoint]
 
 		if condition and nextCheckpoint == self.currentCheckpoint and not self.checkpointsNotified[nextCheckpoint] then
+			console.log("> IMC: Current checkpoint: " .. self.currentCheckpointIndex .. " > " .. self.currentCheckpoint)
 			sendCheckpointNotification(nextCheckpoint)
 			self.checkpointsNotified[nextCheckpoint] = true
 			self.currentCheckpointIndex = self.currentCheckpointIndex + 1  -- Move to the next checkpoint
 			self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]  -- Update the current checkpoint
-			console.log("> IMC: Next checkpoint: " .. self.currentCheckpointIndex .. " > " .. self.currentCheckpoint)
 		end
 	end
 
