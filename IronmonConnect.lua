@@ -52,21 +52,25 @@ local function IronmonConnect()
 		comm.socketServerSend(packet)
 	end
 
-	local function sendCheckpointNotification(checkpoint)
+	local function sendCheckpointNotification(index, checkpoint)
 		local payload = {
 			["type"] = "checkpoint",
 			["metadata"] = {
-				["id"] = self.currentCheckpointIndex,
+				["id"] = index,
 				["name"] = checkpoint,
 			},
 		}
 		send(payload)
 	end
-	
-	function self.initializeCheckpoints()
+
+		function self.initializeCheckpoints()
 		for checkpoint, _ in pairs(Checkpoints) do
 			self.checkpointsNotified[checkpoint] = false
 		end
+	end
+
+	function self.sendDefaultCheckpointNotification()
+		sendCheckpointNotification(1, Checkpoints[1])
 	end
 
 	function self.handleCheckpoint()
@@ -103,7 +107,7 @@ local function IronmonConnect()
 
 		if condition and nextCheckpoint == self.currentCheckpoint and not self.checkpointsNotified[nextCheckpoint] then
 			console.log("> IMC: Current checkpoint: " .. self.currentCheckpointIndex .. " > " .. self.currentCheckpoint)
-			sendCheckpointNotification(nextCheckpoint)
+			sendCheckpointNotification(self.currentCheckpointIndex, nextCheckpoint)
 			self.checkpointsNotified[nextCheckpoint] = true
 			self.currentCheckpointIndex = self.currentCheckpointIndex + 1  -- Move to the next checkpoint
 			self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]  -- Update the current checkpoint
@@ -175,6 +179,9 @@ local function IronmonConnect()
 
 		-- Initialize the checkpoint notification flags.
 		self.initializeCheckpoints()
+
+		-- Reset the checkpoint on the consuming front-end.
+		self.sendDefaultCheckpointNotification()
 	end
 
 	-- Executed once every 30 frames, after most data from game memory is read in
