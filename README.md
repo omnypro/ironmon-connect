@@ -49,8 +49,10 @@ server.listen(8080, () => {
 
 The messages sent to the external system are categorized into multiple types:
 
+* `init` - The script has been initialized.
 * `seed` - A new seed has been generated.
 * `checkpoint` - A checkpoint has been reached.
+* `location` - The player has moved to a new location.
 
 ## Credits
 
