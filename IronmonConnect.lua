@@ -1,6 +1,6 @@
 local function IronmonConnect()
 	local self = {}
-	self.version = "1.1"
+	self.version = "1.2"
 	self.name = "Ironmon Connect"
 	self.author = "Omnyist Productions"
 	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
@@ -114,6 +114,25 @@ local function IronmonConnect()
 		end
 	end
 
+	-- Location Tracking
+	self.currentLocation = 0
+
+	function self.handleLocation()
+		local currentLocation = TrackerAPI.getMapId()
+
+		if currentLocation ~= self.currentLocation then
+			local location = {
+				["type"] = "location",
+				["metadata"] = {
+					["id"] = TrackerAPI.getMapId()
+				}
+			}
+
+			send(location)  -- Send the location data
+			self.currentLocation = currentLocation  -- Update the current location
+		end
+	end
+
 	--------------------------------------
 	-- INTENRAL TRACKER FUNCTIONS BELOW
 	--------------------------------------
@@ -140,6 +159,7 @@ local function IronmonConnect()
 		self.currentCheckpointIndex = 1
 		self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]
 		self.checkpointsNotified = {}
+		self.currentLocation = 0
 		self.seed = nil
 	end
 
@@ -196,6 +216,7 @@ local function IronmonConnect()
 		end
 
 		self.handleCheckpoint()
+		self.handleLocation()
 	end
 
 	-- Executed once every 30 frames, after any battle related data from game memory is read in
