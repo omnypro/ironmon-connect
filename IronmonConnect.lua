@@ -199,9 +199,6 @@ local function IronmonConnect()
 
 		-- Initialize the checkpoint notification flags.
 		self.initializeCheckpoints()
-
-		-- Reset the checkpoint on the consuming front-end.
-		self.sendDefaultCheckpointNotification()
 	end
 
 	-- Executed once every 30 frames, after most data from game memory is read in
@@ -213,6 +210,9 @@ local function IronmonConnect()
 			self.resetSeedVars()
 			loadedVarsThisSeed = true
 			console.log("> IMC: Seed variables reset.")
+
+			-- Reset the checkpoint on the consuming front-end.
+			self.sendDefaultCheckpointNotification()
 		end
 
 		self.handleCheckpoint()
