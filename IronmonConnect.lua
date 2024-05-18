@@ -182,6 +182,7 @@ local function IronmonConnect()
 	-- Executed only once: When the extension is enabled by the user, and/or when the Tracker first starts up, after it loads all other required files and code
 	function self.startup()
 		console.log(string.format("> IMC: Version %s successfully loaded.", self.version))
+		console.log(string.format("> IMC: Using settings file: %s", Options.FILES["Settings File"]))
 		console.log("> IMC: Connected to server: " .. comm.socketServerGetInfo())
 
 		-- Output an init message to help verify things are working on that end.
