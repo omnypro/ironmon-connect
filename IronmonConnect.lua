@@ -1,6 +1,6 @@
 local function IronmonConnect()
 	local self = {}
-	self.version = "1.2"
+	self.version = "1.3"
 	self.name = "Ironmon Connect"
 	self.author = "Omnyist Productions"
 	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
@@ -15,7 +15,6 @@ local function IronmonConnect()
 
   -- Checkpoint Data 
 	local Checkpoints = {
-		"LAB",
 		"RIVAL1",
 		"FIRSTTRAINER",
 		"RIVAL2",
@@ -63,20 +62,25 @@ local function IronmonConnect()
 		send(payload)
 	end
 
-		function self.initializeCheckpoints()
+	function self.initializeCheckpoints()
+		-- Send notification of our initial state.
+		local payload = {
+			["type"] = "checkpoint",
+			["metadata"] = {
+				["id"] = 0,
+				["name"] = "START",
+			},
+		}
+		send(payload)
+
 		for checkpoint, _ in pairs(Checkpoints) do
 			self.checkpointsNotified[checkpoint] = false
 		end
 	end
 
-	function self.sendDefaultCheckpointNotification()
-		sendCheckpointNotification(1, Checkpoints[1])
-	end
-
 	function self.handleCheckpoint()
 		-- Progression Flags
 		local Progression = {
-			LAB = true,
 			RIVAL1 = Program.hasDefeatedTrainer(326) or Program.hasDefeatedTrainer(327) or Program.hasDefeatedTrainer(328),
 			FIRSTTRAINER = Program.hasDefeatedTrainer(102) or Program.hasDefeatedTrainer(115),
 			RIVAL2 = Program.hasDefeatedTrainer(329) or Program.hasDefeatedTrainer(330) or Program.hasDefeatedTrainer(331),
@@ -211,9 +215,6 @@ local function IronmonConnect()
 			self.resetSeedVars()
 			loadedVarsThisSeed = true
 			console.log("> IMC: Seed variables reset.")
-
-			-- Reset the checkpoint on the consuming front-end.
-			self.sendDefaultCheckpointNotification()
 		end
 
 		self.handleCheckpoint()
