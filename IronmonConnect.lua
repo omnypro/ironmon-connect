@@ -1,6 +1,6 @@
 local function IronmonConnect()
 	local self = {}
-	self.version = "1.3"
+	self.version = "1.4"
 	self.name = "Ironmon Connect"
 	self.author = "Omnyist Productions"
 	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
@@ -57,6 +57,7 @@ local function IronmonConnect()
 			["metadata"] = {
 				["id"] = index,
 				["name"] = checkpoint,
+				["seed"] = self.seed,
 			},
 		}
 		send(payload)
