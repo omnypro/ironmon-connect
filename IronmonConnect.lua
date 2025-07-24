@@ -1,268 +1,346 @@
+-- IronmonConnect v2.0 - Refactored with configuration system
 local function IronmonConnect()
-	local self = {}
-	self.version = "1.4"
-	self.name = "Ironmon Connect"
-	self.author = "Omnyist Productions"
-	self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
-	self.github = "omnypro/ironmon-connect"
-	self.url = string.format("https://github.com/%s", self.github or "")
-
-	self.seed = nil
-
-	--------------------------------------
-	-- INTERNAL SCRIPT FUNCTIONS BELOW
-	--------------------------------------
-
-  -- Checkpoint Data 
-	local Checkpoints = {
-		"RIVAL1",
-		"FIRSTTRAINER",
-		"RIVAL2",
-		"BROCK",
-		"RIVAL3",
-		"RIVAL4",
-		"MISTY",
-		"SURGE",
-		"RIVAL5",
-		"ROCKETHIDEOUT",
-		"ERIKA",
-		"KOGA",
-		"RIVAL6",
-		"SILPHCO",
-		"SABRINA",
-		"BLAINE",
-		"GIOVANNI",
-		"RIVAL7",
-		"LORELAI",
-		"BRUNO",
-		"AGATHA",
-		"LANCE",
-		"CHAMP"
-	}
-
-	-- Variables
-	self.currentCheckpointIndex = 1
-	self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]
-	self.checkpointsNotified = {}
-
-	-- Functions
-	local function send(data)
-		packet = FileManager.JsonLibrary.encode(data)
-		comm.socketServerSend(packet)
-	end
-
-	local function sendCheckpointNotification(index, checkpoint)
-		local payload = {
-			["type"] = "checkpoint",
-			["metadata"] = {
-				["id"] = index,
-				["name"] = checkpoint,
-				["seed"] = self.seed,
-			},
-		}
-		send(payload)
-	end
-
-	function self.initializeCheckpoints()
-		-- Send notification of our initial state.
-		local payload = {
-			["type"] = "checkpoint",
-			["metadata"] = {
-				["id"] = 0,
-				["name"] = "START",
-			},
-		}
-		send(payload)
-
-		for checkpoint, _ in pairs(Checkpoints) do
-			self.checkpointsNotified[checkpoint] = false
-		end
-	end
-
-	function self.handleCheckpoint()
-		-- Progression Flags
-		local Progression = {
-			RIVAL1 = Program.hasDefeatedTrainer(326) or Program.hasDefeatedTrainer(327) or Program.hasDefeatedTrainer(328),
-			FIRSTTRAINER = Program.hasDefeatedTrainer(102) or Program.hasDefeatedTrainer(115),
-			RIVAL2 = Program.hasDefeatedTrainer(329) or Program.hasDefeatedTrainer(330) or Program.hasDefeatedTrainer(331),
-			BROCK = Program.hasDefeatedTrainer(414),
-			RIVAL3 = Program.hasDefeatedTrainer(332) or Program.hasDefeatedTrainer(333) or Program.hasDefeatedTrainer(334),
-			RIVAL4 = Program.hasDefeatedTrainer(426) or Program.hasDefeatedTrainer(427) or Program.hasDefeatedTrainer(428),
-			MISTY = Program.hasDefeatedTrainer(415),
-			SURGE = Program.hasDefeatedTrainer(416),
-			RIVAL5 = Program.hasDefeatedTrainer(429) or Program.hasDefeatedTrainer(430) or Program.hasDefeatedTrainer(431),
-			ROCKETHIDEOUT = Program.hasDefeatedTrainer(348),
-			ERIKA = Program.hasDefeatedTrainer(417),
-			KOGA = Program.hasDefeatedTrainer(418),
-			RIVAL6 = Program.hasDefeatedTrainer(432) or Program.hasDefeatedTrainer(433) or Program.hasDefeatedTrainer(434),
-			SILPHCO = Program.hasDefeatedTrainer(349),
-			SABRINA = Program.hasDefeatedTrainer(420),
-			BLAINE = Program.hasDefeatedTrainer(419),
-			GIOVANNI = Program.hasDefeatedTrainer(350),
-			RIVAL7 = Program.hasDefeatedTrainer(435) or Program.hasDefeatedTrainer(436) or Program.hasDefeatedTrainer(437),
-			LORELAI = Program.hasDefeatedTrainer(410) or Program.hasDefeatedTrainer(735),
-			BRUNO = Program.hasDefeatedTrainer(411) or Program.hasDefeatedTrainer(736),
-			AGATHA = Program.hasDefeatedTrainer(412) or Program.hasDefeatedTrainer(737),
-			LANCE = Program.hasDefeatedTrainer(413) or Program.hasDefeatedTrainer(738),
-			CHAMP = Program.hasDefeatedTrainer(438) or Program.hasDefeatedTrainer(439) or Program.hasDefeatedTrainer(440)
-		}
-
-		local nextCheckpoint = Checkpoints[self.currentCheckpointIndex]
-		local condition = Progression[nextCheckpoint]
-
-		if condition and nextCheckpoint == self.currentCheckpoint and not self.checkpointsNotified[nextCheckpoint] then
-			console.log("> IMC: Current checkpoint: " .. self.currentCheckpointIndex .. " > " .. self.currentCheckpoint)
-			sendCheckpointNotification(self.currentCheckpointIndex, nextCheckpoint)
-			self.checkpointsNotified[nextCheckpoint] = true
-			self.currentCheckpointIndex = self.currentCheckpointIndex + 1  -- Move to the next checkpoint
-			self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]  -- Update the current checkpoint
-		end
-	end
-
-	-- Location Tracking
-	self.currentLocation = 0
-
-	function self.handleLocation()
-		local currentLocation = TrackerAPI.getMapId()
-
-		if currentLocation ~= self.currentLocation then
-			local location = {
-				["type"] = "location",
-				["metadata"] = {
-					["id"] = TrackerAPI.getMapId()
-				}
-			}
-
-			send(location)  -- Send the location data
-			self.currentLocation = currentLocation  -- Update the current location
-		end
-	end
-
-	--------------------------------------
-	-- INTENRAL TRACKER FUNCTIONS BELOW
-	--------------------------------------
-
-	function self.isPlayingFRLG()
-		return GameSettings.game == 3
-	end
-
-	function self.handleSeed() 
-		self.seed = Main.currentSeed
-		console.log("> IMC: Seed number is now " .. self.seed .. ".")
-
-		local seed = {
-			["type"] = "seed",
-			["metadata"] = {
-				["count"] = Main.currentSeed
-			}
-		}
-		send(seed)
-	end
-
-	function self.resetSeedVars()
-		self.initializeCheckpoints()
-		self.currentCheckpointIndex = 1
-		self.currentCheckpoint = Checkpoints[self.currentCheckpointIndex]
-		self.checkpointsNotified = {}
-		self.currentLocation = 0
-		self.seed = nil
-	end
-
-	-- To properly determine when new items are acquired, need to load them in first at least once.
-	local loadedVarsThisSeed
-
-	-- Executed when the user clicks the "Check for Updates" button while viewing the extension details within the Tracker's UI
-	-- Returns [true, downloadUrl] if an update is available (downloadUrl auto opens in browser for user); otherwise returns [false, downloadUrl]
-	-- Remove this function if you choose not to implement a version update check for your extension
-	function self.checkForUpdates()
-		-- Update the pattern below to match your version. You can check what this looks like by visiting the latest release url on your repo
-		local versionResponsePattern = '"tag_name":%s+"%w+(%d+%.%d+)"' -- matches "1.0" in "tag_name": "v1.0"
-		local versionCheckUrl = string.format("https://api.github.com/repos/%s/releases/latest", self.github or "")
-		local downloadUrl = string.format("%s/releases/latest", self.url or "")
-		local compareFunc = function(a, b) return a ~= b and not Utils.isNewerVersion(a, b) end -- if current version is *older* than online version
-		local isUpdateAvailable = Utils.checkForVersionUpdate(versionCheckUrl, self.version, versionResponsePattern, compareFunc)
-		return isUpdateAvailable, downloadUrl
-	end
-
-	-- Executed only once: When the extension is enabled by the user, and/or when the Tracker first starts up, after it loads all other required files and code
-	function self.startup()
-		console.log(string.format("> IMC: Version %s successfully loaded.", self.version))
-		console.log(string.format("> IMC: Using settings file: %s", Options.FILES["Settings File"]))
-		console.log("> IMC: Connected to server: " .. comm.socketServerGetInfo())
-
-		-- Output an init message to help verify things are working on that end.
-		local payload = {
-			["type"] = "init",
-			["metadata"] = {
-				["version"] = self.version,
-				["game"] = GameSettings.game,
-			},
-		}
-		send(payload)
-
-		-- Populate the current seed number, which should exist upon startup.
-		self.handleSeed()
-
-		-- Initialize the checkpoint notification flags.
-		self.initializeCheckpoints()
-	end
-
-	-- Executed once every 30 frames, after most data from game memory is read in
-	function self.afterProgramDataUpdate()
-		-- Once per seed, when the player is able to move their character, initiate the seed data.
-		if not self.isPlayingFRLG() or not Program.isValidMapLocation() then
-			return
-		elseif not loadedVarsThisSeed then
-			self.resetSeedVars()
-			loadedVarsThisSeed = true
-			console.log("> IMC: Seed variables reset.")
-		end
-
-		self.handleCheckpoint()
-		self.handleLocation()
-	end
-
-	-- Executed once every 30 frames, after any battle related data from game memory is read in
-	function self.afterBattleDataUpdate()
-		-- [ADD CODE HERE]
-	end
-
-	-- Executed once every 30 frames or after any redraw event is scheduled (i.e. most button presses)
-	function self.afterRedraw()
-		-- [ADD CODE HERE]
-	end
-
-	-- Executed before a button's onClick() is processed, and only once per click per button
-	-- Param: button: the button object being clicked
-	function self.onButtonClicked(button)
-		-- [ADD CODE HERE]
-	end
-
-	-- Executed after a new battle begins (wild or trainer), and only once per battle
-	function self.afterBattleBegins()
-		-- [ADD CODE HERE]
-	end
-
-	-- Executed after a battle ends, and only once per battle
-	function self.afterBattleEnds()
-		-- [ADD CODE HERE]
-	end
-
-	-- [Bizhawk only] Executed each frame (60 frames per second)
-	-- CAUTION: Avoid unnecessary calculations here, as this can easily affect performance.
-	function self.inputCheckBizhawk()
-		-- Uncomment to use, otherwise leave commented out
-			-- local mouseInput = input.getmouse() -- lowercase 'input' pulls directly from Bizhawk API
-			-- local joypadButtons = Input.getJoypadInputFormatted() -- uppercase 'Input' uses Tracker formatted input
-		-- [ADD CODE HERE]
-	end
-
-	-- Executed each frame of the game loop, after most data from game memory is read in but before any natural redraw events occur
-	-- CAUTION: Avoid code here if possible, as this can easily affect performance. Most Tracker updates occur at 30-frame intervals, some at 10-frame.
-	function self.afterEachFrame()
-		-- [ADD CODE HERE]
-	end
-
-	return self
+    local self = {}
+    self.version = "2.0"
+    self.name = "Ironmon Connect"
+    self.author = "Omnyist Productions"
+    self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
+    self.github = "omnypro/ironmon-connect"
+    self.url = string.format("https://github.com/%s", self.github or "")
+    
+    -- Load modules
+    local Config = dofile(FileManager.getPathForFile("Config.lua") or "Config.lua")
+    local Utils = dofile(FileManager.getPathForFile("Utils.lua") or "Utils.lua")
+    
+    -- Internal state
+    local state = {
+        initialized = false,
+        connected = false,
+        frameCounter = 0,
+        lastSeed = nil,
+        lastArea = nil,
+        checkpointsNotified = {},
+        currentCheckpointIndex = 1,
+        eventQueue = {},
+        dirtyFlags = {
+            seed = false,
+            location = false,
+            checkpoint = false,
+            team = false
+        }
+    }
+    
+    -- Temporary FRLG checkpoints (will be moved to JSON)
+    local Checkpoints = {
+        "RIVAL1", "FIRSTTRAINER", "RIVAL2", "BROCK", "RIVAL3", "RIVAL4",
+        "MISTY", "SURGE", "RIVAL5", "ROCKETHIDEOUT", "ERIKA", "KOGA",
+        "RIVAL6", "SILPHCO", "SABRINA", "BLAINE", "GIOVANNI", "RIVAL7",
+        "LORELAI", "BRUNO", "AGATHA", "LANCE", "CHAMP"
+    }
+    
+    -- Initialize the extension
+    function self.startup()
+        -- Initialize configuration
+        Config.initialize()
+        
+        -- Log startup
+        Config.log("info", string.format("%s v%s starting up", self.name, self.version))
+        
+        -- Initialize connection
+        if Config.isFeatureEnabled("wsEnabled") ~= false then
+            self.connect()
+        end
+        
+        -- Send initialization event
+        self.queueEvent("init", {
+            version = self.version,
+            tracker_version = Main.TrackerVersion or "Unknown",
+            game = GameSettings.game or "Unknown",
+            features = {
+                runTracking = Config.get("runTracking"),
+                battleEvents = Config.get("battleEvents"),
+                checkpoints = Config.get("checkpoints"),
+                teamUpdates = Config.get("teamUpdates"),
+                locationTracking = Config.get("locationTracking")
+            }
+        })
+        
+        state.initialized = true
+    end
+    
+    -- Queue an event for sending
+    function self.queueEvent(eventType, data)
+        if not state.initialized then return end
+        
+        local event = {
+            type = eventType,
+            data = data,
+            timestamp = os.time(),
+            frame = emu.framecount()
+        }
+        
+        table.insert(state.eventQueue, event)
+        
+        -- Immediate send for critical events
+        if eventType == "init" or eventType == "run_start" or eventType == "run_end" then
+            self.flushEventQueue()
+        end
+    end
+    
+    -- Send queued events
+    function self.flushEventQueue()
+        if #state.eventQueue == 0 then return end
+        
+        local batchSize = Config.get("batchSize")
+        local events = {}
+        
+        -- Get up to batchSize events
+        for i = 1, math.min(#state.eventQueue, batchSize) do
+            table.insert(events, table.remove(state.eventQueue, 1))
+        end
+        
+        -- Send the batch
+        local success = self.send({
+            type = "batch",
+            events = events,
+            count = #events
+        })
+        
+        -- If send failed, put events back in queue
+        if not success then
+            for i = #events, 1, -1 do
+                table.insert(state.eventQueue, 1, events[i])
+            end
+        end
+    end
+    
+    -- Send data over websocket
+    function self.send(data)
+        if not state.connected then
+            Config.log("debug", "Not connected, queuing event")
+            return false
+        end
+        
+        local message = Utils.jsonEncode(data)
+        local success, err = Utils.pcallWithContext(function()
+            comm.socketServerSend(message)
+        end, "WebSocket Send")
+        
+        if not success then
+            Config.log("error", "Failed to send: " .. tostring(err))
+            state.connected = false
+            return false
+        end
+        
+        Config.log("debug", "Sent: " .. data.type)
+        return true
+    end
+    
+    -- Connect to websocket
+    function self.connect()
+        Config.log("info", "Attempting to connect to " .. Config.getWebSocketUrl())
+        
+        -- In BizHawk, the socket connection is implicit through comm.socketServerSend
+        -- We'll mark as connected and let the first send determine actual state
+        state.connected = true
+        
+        return true
+    end
+    
+    -- Process seed changes
+    function self.processSeed()
+        if not Config.isFeatureEnabled("runTracking") then return end
+        
+        local currentSeed = Main.currentSeed
+        if currentSeed ~= state.lastSeed then
+            Config.log("info", "Seed changed: " .. tostring(currentSeed))
+            
+            self.queueEvent("seed", {
+                value = currentSeed,
+                attempt = currentSeed -- Main.currentSeed represents attempt number
+            })
+            
+            state.lastSeed = currentSeed
+            
+            -- Reset checkpoint progress on new seed
+            state.checkpointsNotified = {}
+            state.currentCheckpointIndex = 1
+        end
+    end
+    
+    -- Process location changes
+    function self.processLocation()
+        if not Config.isFeatureEnabled("locationTracking") then return end
+        
+        local mapId = TrackerAPI.getMapId()
+        if mapId ~= state.lastArea then
+            local routeInfo = RouteData.Info[mapId]
+            local locationName = routeInfo and routeInfo.name or "Unknown"
+            
+            self.queueEvent("location", {
+                mapId = mapId,
+                name = locationName
+            })
+            
+            state.lastArea = mapId
+        end
+    end
+    
+    -- Process checkpoint detection (temporary implementation)
+    function self.processCheckpoints()
+        if not Config.isFeatureEnabled("checkpoints") then return end
+        if GameSettings.game ~= "Pokemon FireRed" and GameSettings.game ~= "Pokemon LeafGreen" then
+            return -- Only FRLG supported for now
+        end
+        
+        -- This is the existing checkpoint logic - will be replaced in Phase 3
+        local defeatedTrainer = self.determineSplitChange()
+        if defeatedTrainer and defeatedTrainer ~= "" then
+            local checkpointName, index = defeatedTrainer, nil
+            
+            -- Find the checkpoint index
+            for i, checkpoint in ipairs(Checkpoints) do
+                if checkpoint == defeatedTrainer then
+                    index = i
+                    break
+                end
+            end
+            
+            if index and not state.checkpointsNotified[checkpointName] then
+                self.queueEvent("checkpoint", {
+                    name = checkpointName,
+                    index = index,
+                    total = #Checkpoints
+                })
+                
+                state.checkpointsNotified[checkpointName] = true
+                state.currentCheckpointIndex = index + 1
+            end
+        end
+    end
+    
+    -- Hook: Called after each frame
+    function self.afterProgramDataUpdate()
+        if not state.initialized then return end
+        
+        state.frameCounter = state.frameCounter + 1
+        
+        -- Check for changes every N frames
+        if state.frameCounter >= Config.get("updateFrequency") then
+            state.frameCounter = 0
+            
+            -- Mark systems as dirty instead of processing immediately
+            state.dirtyFlags.seed = true
+            state.dirtyFlags.location = true
+            state.dirtyFlags.checkpoint = true
+        end
+    end
+    
+    -- Hook: Called on program update tick (more efficient than every frame)
+    function self.onProgramUpdateTick()
+        if not state.initialized then return end
+        
+        -- Process dirty flags
+        if state.dirtyFlags.seed then
+            self.processSeed()
+            state.dirtyFlags.seed = false
+        end
+        
+        if state.dirtyFlags.location then
+            self.processLocation()
+            state.dirtyFlags.location = false
+        end
+        
+        if state.dirtyFlags.checkpoint then
+            self.processCheckpoints()
+            state.dirtyFlags.checkpoint = false
+        end
+        
+        -- Flush event queue periodically
+        if #state.eventQueue > 0 then
+            self.flushEventQueue()
+        end
+    end
+    
+    -- Hook: Called when battle data updates
+    function self.afterBattleDataUpdate()
+        if not Config.isFeatureEnabled("battleEvents") then return end
+        
+        -- Mark battle system as dirty for processing
+        state.dirtyFlags.battle = true
+    end
+    
+    -- Temporary checkpoint detection (from original code)
+    function self.determineSplitChange()
+        local defeatedTrainers = Program.getDefeatedTrainersByLocation()
+        local currentTrainers = {}
+        
+        for _, trainer in pairs(defeatedTrainers) do
+            local lookup = TrainerData.getTrainerInfo(trainer)
+            if lookup and lookup.class and lookup.class.name then
+                currentTrainers[lookup.class.name] = true
+            end
+        end
+        
+        -- FRLG specific logic (will be replaced with JSON config)
+        local rivalMapping = {
+            ["Youngster 1"] = "RIVAL1",
+            ["Bug Catcher 3"] = "FIRSTTRAINER",
+            -- ... rest of the mappings would go here
+        }
+        
+        for trainerName, checkpointName in pairs(rivalMapping) do
+            if currentTrainers[trainerName] and not state.checkpointsNotified[checkpointName] then
+                return checkpointName
+            end
+        end
+        
+        -- Badge detection
+        local badges = TrackerAPI.getBadgeList()
+        local badgeMapping = {
+            [1] = "BROCK", [2] = "MISTY", [3] = "SURGE", [4] = "ERIKA",
+            [5] = "KOGA", [6] = "SABRINA", [7] = "BLAINE", [8] = "GIOVANNI"
+        }
+        
+        for i, obtained in ipairs(badges) do
+            local checkpointName = badgeMapping[i]
+            if obtained and checkpointName and not state.checkpointsNotified[checkpointName] then
+                return checkpointName
+            end
+        end
+        
+        return nil
+    end
+    
+    -- Hook: Called when unloading
+    function self.unload()
+        Config.log("info", "Shutting down " .. self.name)
+        
+        -- Send any remaining events
+        self.flushEventQueue()
+        
+        -- Clean up
+        state.initialized = false
+        state.connected = false
+    end
+    
+    -- Hook: Called when game is reset
+    function self.afterGameStateReloaded()
+        Config.log("info", "Game state reloaded")
+        
+        -- Reset state
+        state.lastSeed = nil
+        state.lastArea = nil
+        state.checkpointsNotified = {}
+        state.currentCheckpointIndex = 1
+        
+        -- Send reset event
+        self.queueEvent("reset", {
+            reason = "game_state_reloaded"
+        })
+    end
+    
+    return self
 end
+
 return IronmonConnect
