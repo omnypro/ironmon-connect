@@ -47,7 +47,7 @@ local function IronmonConnect()
     -- Load settings from TrackerAPI
     function Config.load()
         if not TrackerAPI then
-            print("[IronmonConnect] Warning: TrackerAPI not available, using defaults")
+            console.log("> IMC: Warning: TrackerAPI not available, using defaults")
             return
         end
         
@@ -67,14 +67,14 @@ local function IronmonConnect()
         end
         
         if Config.current.debug then
-            print("[IronmonConnect] Configuration loaded successfully")
+            console.log("> IMC: Configuration loaded successfully")
         end
     end
     
     -- Save a setting
     function Config.set(key, value)
         if Config.defaults[key] == nil then
-            print("[IronmonConnect] Warning: Unknown setting key: " .. tostring(key))
+            console.log("> IMC: Warning: Unknown setting key: " .. tostring(key))
             return false
         end
         
@@ -109,7 +109,7 @@ local function IronmonConnect()
         local messageLevel = levels[level] or 2
         
         if messageLevel >= currentLevel then
-            print(string.format("[IronmonConnect][%s] %s", level:upper(), message))
+            console.log(string.format("> IMC: [%s] %s", level:upper(), message))
         end
     end
     
@@ -184,7 +184,9 @@ local function IronmonConnect()
         Config.initialize()
         
         -- Log startup
-        Config.log("info", string.format("%s v%s starting up", self.name, self.version))
+        Config.log("info", string.format("Version %s successfully loaded.", self.version))
+        Config.log("info", string.format("Using settings file: %s", Options and Options.FILES and Options.FILES["Settings File"] or "Unknown"))
+        Config.log("info", "Connected to server: " .. (comm.socketServerGetInfo and comm.socketServerGetInfo() or "Unknown"))
         
         -- Send initialization event
         send({
@@ -203,6 +205,16 @@ local function IronmonConnect()
             }
         })
         
+        -- Process initial seed if available
+        if Main and Main.currentSeed then
+            self.processSeed()
+        end
+        
+        -- Initialize checkpoint flags
+        for _, checkpoint in ipairs(Checkpoints) do
+            state.checkpointsNotified[checkpoint] = false
+        end
+        
         state.initialized = true
     end
     
@@ -213,7 +225,7 @@ local function IronmonConnect()
         
         local currentSeed = Main.currentSeed
         if currentSeed ~= state.lastSeed then
-            Config.log("info", "Seed changed: " .. tostring(currentSeed))
+            Config.log("info", "Seed number is now " .. tostring(currentSeed) .. ".")
             
             send({
                 type = "seed",
