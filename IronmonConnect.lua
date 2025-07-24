@@ -1,4 +1,4 @@
--- IronmonConnect v2.0
+-- IronmonConnect v2.0 - Single file version for Ironmon Tracker
 local function IronmonConnect()
     local self = {}
     self.version = "2.0"
@@ -15,17 +15,6 @@ local function IronmonConnect()
     
     -- Default configuration values
     Config.defaults = {
-        -- Connection settings
-        wsHost = "localhost",
-        wsPort = 8080,
-        reconnectAttempts = 5,
-        reconnectDelay = 5000, -- milliseconds
-        
-        -- Performance settings
-        updateFrequency = 30, -- frames between updates
-        batchSize = 10, -- max events per batch
-        batchInterval = 60, -- frames between batch sends
-        
         -- Feature toggles
         runTracking = true,
         battleEvents = true,
@@ -105,35 +94,7 @@ local function IronmonConnect()
     
     -- Validate configuration values
     function Config.validate()
-        -- Validate port range
-        if Config.current.wsPort < 1 or Config.current.wsPort > 65535 then
-            Config.current.wsPort = Config.defaults.wsPort
-            print("[IronmonConnect] Invalid port number, using default: " .. Config.defaults.wsPort)
-        end
-        
-        -- Validate update frequency
-        if Config.current.updateFrequency < 1 or Config.current.updateFrequency > 300 then
-            Config.current.updateFrequency = Config.defaults.updateFrequency
-        end
-        
-        -- Validate batch settings
-        if Config.current.batchSize < 1 then
-            Config.current.batchSize = 1
-        elseif Config.current.batchSize > 100 then
-            Config.current.batchSize = 100
-        end
-        
-        -- Validate reconnect attempts
-        if Config.current.reconnectAttempts < 0 then
-            Config.current.reconnectAttempts = 0
-        elseif Config.current.reconnectAttempts > 20 then
-            Config.current.reconnectAttempts = 20
-        end
-    end
-    
-    -- Get WebSocket URL
-    function Config.getWebSocketUrl()
-        return string.format("ws://%s:%d", Config.current.wsHost, Config.current.wsPort)
+        -- Currently no validation needed
     end
     
     -- Check if a feature is enabled
@@ -157,47 +118,6 @@ local function IronmonConnect()
     -- ===========================================
     local Utils = {}
     
-    -- JSON encoding using Ironmon Tracker's JSON library
-    function Utils.jsonEncode(data)
-        if FileManager and FileManager.JsonLibrary then
-            return FileManager.JsonLibrary.encode(data)
-        else
-            -- Fallback to simple implementation
-            return Utils.simpleJsonEncode(data)
-        end
-    end
-    
-    -- Simple JSON encoder for fallback
-    function Utils.simpleJsonEncode(data)
-        local t = type(data)
-        if t == "nil" then
-            return "null"
-        elseif t == "boolean" then
-            return tostring(data)
-        elseif t == "number" then
-            return tostring(data)
-        elseif t == "string" then
-            return string.format('"%s"', data:gsub('"', '\\"'))
-        elseif t == "table" then
-            local isArray = #data > 0
-            local parts = {}
-            
-            if isArray then
-                for i, v in ipairs(data) do
-                    parts[i] = Utils.simpleJsonEncode(v)
-                end
-                return "[" .. table.concat(parts, ",") .. "]"
-            else
-                for k, v in pairs(data) do
-                    table.insert(parts, string.format('"%s":%s', k, Utils.simpleJsonEncode(v)))
-                end
-                return "{" .. table.concat(parts, ",") .. "}"
-            end
-        else
-            return "null"
-        end
-    end
-    
     -- Generate UUID v4
     function Utils.generateUUID()
         local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
@@ -220,21 +140,6 @@ local function IronmonConnect()
         )
     end
     
-    -- Error handler with context
-    function Utils.pcallWithContext(func, context, ...)
-        local args = {...}
-        local success, result = pcall(function()
-            return func(unpack(args))
-        end)
-        
-        if not success then
-            local errorMsg = string.format("[%s] Error: %s", context or "Unknown", tostring(result))
-            return false, errorMsg
-        end
-        
-        return true, result
-    end
-    
     -- ===========================================
     -- MAIN IRONMONCONNECT LOGIC
     -- ===========================================
@@ -242,13 +147,11 @@ local function IronmonConnect()
     -- Internal state
     local state = {
         initialized = false,
-        connected = false,
         frameCounter = 0,
         lastSeed = nil,
         lastArea = nil,
         checkpointsNotified = {},
         currentCheckpointIndex = 1,
-        eventQueue = {},
         dirtyFlags = {
             seed = false,
             location = false,
@@ -265,6 +168,16 @@ local function IronmonConnect()
         "LORELAI", "BRUNO", "AGATHA", "LANCE", "CHAMP"
     }
     
+    -- Simple send function - just like v1
+    local function send(data)
+        local packet = FileManager.JsonLibrary.encode(data)
+        comm.socketServerSend(packet)
+        
+        if Config.get("debug") then
+            Config.log("debug", "Sent: " .. data.type)
+        end
+    end
+    
     -- Initialize the extension
     function self.startup()
         -- Initialize configuration
@@ -273,106 +186,26 @@ local function IronmonConnect()
         -- Log startup
         Config.log("info", string.format("%s v%s starting up", self.name, self.version))
         
-        -- Initialize connection
-        if Config.isFeatureEnabled("wsEnabled") ~= false then
-            self.connect()
-        end
-        
         -- Send initialization event
-        self.queueEvent("init", {
-            version = self.version,
-            tracker_version = Main.TrackerVersion or "Unknown",
-            game = GameSettings.game or "Unknown",
-            features = {
-                runTracking = Config.get("runTracking"),
-                battleEvents = Config.get("battleEvents"),
-                checkpoints = Config.get("checkpoints"),
-                teamUpdates = Config.get("teamUpdates"),
-                locationTracking = Config.get("locationTracking")
+        send({
+            type = "init",
+            data = {
+                version = self.version,
+                tracker_version = Main.TrackerVersion or "Unknown",
+                game = GameSettings.game or "Unknown",
+                features = {
+                    runTracking = Config.get("runTracking"),
+                    battleEvents = Config.get("battleEvents"),
+                    checkpoints = Config.get("checkpoints"),
+                    teamUpdates = Config.get("teamUpdates"),
+                    locationTracking = Config.get("locationTracking")
+                }
             }
         })
         
         state.initialized = true
     end
     
-    -- Queue an event for sending
-    function self.queueEvent(eventType, data)
-        if not state.initialized then return end
-        
-        local event = {
-            type = eventType,
-            data = data,
-            timestamp = os.time(),
-            frame = emu and emu.framecount and emu.framecount() or 0
-        }
-        
-        table.insert(state.eventQueue, event)
-        
-        -- Immediate send for critical events
-        if eventType == "init" or eventType == "run_start" or eventType == "run_end" then
-            self.flushEventQueue()
-        end
-    end
-    
-    -- Send queued events
-    function self.flushEventQueue()
-        if #state.eventQueue == 0 then return end
-        
-        local batchSize = Config.get("batchSize")
-        local events = {}
-        
-        -- Get up to batchSize events
-        for i = 1, math.min(#state.eventQueue, batchSize) do
-            table.insert(events, table.remove(state.eventQueue, 1))
-        end
-        
-        -- Send the batch
-        local success = self.send({
-            type = "batch",
-            events = events,
-            count = #events
-        })
-        
-        -- If send failed, put events back in queue
-        if not success then
-            for i = #events, 1, -1 do
-                table.insert(state.eventQueue, 1, events[i])
-            end
-        end
-    end
-    
-    -- Send data over websocket
-    function self.send(data)
-        if not state.connected then
-            Config.log("debug", "Not connected, queuing event")
-            return false
-        end
-        
-        local message = Utils.jsonEncode(data)
-        local success, err = Utils.pcallWithContext(function()
-            comm.socketServerSend(message)
-        end, "WebSocket Send")
-        
-        if not success then
-            Config.log("error", "Failed to send: " .. tostring(err))
-            state.connected = false
-            return false
-        end
-        
-        Config.log("debug", "Sent: " .. data.type)
-        return true
-    end
-    
-    -- Connect to websocket
-    function self.connect()
-        Config.log("info", "Attempting to connect to " .. Config.getWebSocketUrl())
-        
-        -- In BizHawk, the socket connection is implicit through comm.socketServerSend
-        -- We'll mark as connected and let the first send determine actual state
-        state.connected = true
-        
-        return true
-    end
     
     -- Process seed changes
     function self.processSeed()
@@ -382,9 +215,12 @@ local function IronmonConnect()
         if currentSeed ~= state.lastSeed then
             Config.log("info", "Seed changed: " .. tostring(currentSeed))
             
-            self.queueEvent("seed", {
-                value = currentSeed,
-                attempt = currentSeed -- Main.currentSeed represents attempt number
+            send({
+                type = "seed",
+                data = {
+                    value = currentSeed,
+                    attempt = currentSeed -- Main.currentSeed represents attempt number
+                }
             })
             
             state.lastSeed = currentSeed
@@ -404,9 +240,12 @@ local function IronmonConnect()
             local routeInfo = RouteData.Info[mapId]
             local locationName = routeInfo and routeInfo.name or "Unknown"
             
-            self.queueEvent("location", {
-                mapId = mapId,
-                name = locationName
+            send({
+                type = "location",
+                data = {
+                    mapId = mapId,
+                    name = locationName
+                }
             })
             
             state.lastArea = mapId
@@ -434,10 +273,14 @@ local function IronmonConnect()
             end
             
             if index and not state.checkpointsNotified[checkpointName] then
-                self.queueEvent("checkpoint", {
-                    name = checkpointName,
-                    index = index,
-                    total = #Checkpoints
+                send({
+                    type = "checkpoint",
+                    data = {
+                        name = checkpointName,
+                        index = index,
+                        total = #Checkpoints,
+                        seed = state.lastSeed
+                    }
                 })
                 
                 state.checkpointsNotified[checkpointName] = true
@@ -452,8 +295,8 @@ local function IronmonConnect()
         
         state.frameCounter = state.frameCounter + 1
         
-        -- Check for changes every N frames
-        if state.frameCounter >= Config.get("updateFrequency") then
+        -- Check for changes every 30 frames (0.5 seconds)
+        if state.frameCounter >= 30 then
             state.frameCounter = 0
             
             -- Mark systems as dirty instead of processing immediately
@@ -483,10 +326,6 @@ local function IronmonConnect()
             state.dirtyFlags.checkpoint = false
         end
         
-        -- Flush event queue periodically
-        if #state.eventQueue > 0 then
-            self.flushEventQueue()
-        end
     end
     
     -- Hook: Called when battle data updates
@@ -543,12 +382,8 @@ local function IronmonConnect()
     function self.unload()
         Config.log("info", "Shutting down " .. self.name)
         
-        -- Send any remaining events
-        self.flushEventQueue()
-        
         -- Clean up
         state.initialized = false
-        state.connected = false
     end
     
     -- Hook: Called when game is reset
@@ -562,8 +397,11 @@ local function IronmonConnect()
         state.currentCheckpointIndex = 1
         
         -- Send reset event
-        self.queueEvent("reset", {
-            reason = "game_state_reloaded"
+        send({
+            type = "reset",
+            data = {
+                reason = "game_state_reloaded"
+            }
         })
     end
     
