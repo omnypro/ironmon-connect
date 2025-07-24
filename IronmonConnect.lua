@@ -152,6 +152,7 @@ local function IronmonConnect()
         lastArea = nil,
         checkpointsNotified = {},
         currentCheckpointIndex = 1,
+        wasConnected = false,  -- Track connection state changes
         dirtyFlags = {
             seed = false,
             location = false,
@@ -168,13 +169,36 @@ local function IronmonConnect()
         "LORELAI", "BRUNO", "AGATHA", "LANCE", "CHAMP"
     }
     
-    -- Simple send function - just like v1
+    -- Enhanced send function with connection checking
     local function send(data)
+        -- Check if connected before sending
+        if not comm.socketServerIsConnected() then
+            if state.wasConnected then
+                Config.log("error", "Lost connection to server")
+                state.wasConnected = false
+            end
+            return false
+        end
+        
+        -- Update connection state
+        if not state.wasConnected then
+            Config.log("info", "Connection established")
+            state.wasConnected = true
+        end
+        
+        -- Send the data
         local packet = FileManager.JsonLibrary.encode(data)
         comm.socketServerSend(packet)
         
-        if Config.get("debug") then
-            Config.log("debug", "Sent: " .. data.type)
+        -- Check if send was successful
+        if comm.socketServerSuccessful() then
+            if Config.get("debug") then
+                Config.log("debug", "Sent: " .. data.type)
+            end
+            return true
+        else
+            Config.log("warn", "Failed to send: " .. data.type)
+            return false
         end
     end
     
@@ -186,7 +210,14 @@ local function IronmonConnect()
         -- Log startup
         Config.log("info", string.format("Version %s successfully loaded.", self.version))
         Config.log("info", string.format("Using settings file: %s", Options and Options.FILES and Options.FILES["Settings File"] or "Unknown"))
-        Config.log("info", "Connected to server: " .. (comm.socketServerGetInfo and comm.socketServerGetInfo() or "Unknown"))
+        
+        -- Check initial connection status
+        if comm.socketServerIsConnected() then
+            Config.log("info", "Connected to server: " .. (comm.socketServerGetInfo and comm.socketServerGetInfo() or "Connected"))
+            state.wasConnected = true
+        else
+            Config.log("warn", "No connection to server - start your server application and restart BizHawk")
+        end
         
         -- Send initialization event
         send({
@@ -321,6 +352,19 @@ local function IronmonConnect()
     -- Hook: Called on program update tick (more efficient than every frame)
     function self.onProgramUpdateTick()
         if not state.initialized then return end
+        
+        -- Periodic connection status check
+        if state.frameCounter % 300 == 0 then  -- Check every ~5 seconds at 60fps
+            local isConnected = comm.socketServerIsConnected()
+            if isConnected ~= state.wasConnected then
+                if isConnected then
+                    Config.log("info", "Connection restored")
+                else
+                    Config.log("error", "Connection lost")
+                end
+                state.wasConnected = isConnected
+            end
+        end
         
         -- Process dirty flags
         if state.dirtyFlags.seed then
