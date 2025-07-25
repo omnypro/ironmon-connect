@@ -557,16 +557,58 @@ local function IronmonConnect()
             end
         end
         
-        -- FRLG specific logic (will be replaced with JSON config)
-        local rivalMapping = {
-            ["Youngster 1"] = "RIVAL1",
-            ["Bug Catcher 3"] = "FIRSTTRAINER",
-            -- ... rest of the mappings would go here
+        -- CHECKPOINT DETECTION STRATEGY:
+        -- We use a hybrid approach for checkpoint detection:
+        -- 1. Trainer class names for specific story battles (RIVAL1, FIRSTTRAINER)
+        -- 2. Trainer IDs for all other checkpoints (more reliable than class names)
+        -- This is intentional - DO NOT change without careful consideration
+        
+        -- Trainer class name mappings (for battles with unique class names)
+        local CLASS_NAME_CHECKPOINTS = {
+            ["Youngster 1"] = "RIVAL1",      -- Oak's Lab (verified)
+            ["Bug Catcher 3"] = "FIRSTTRAINER"  -- Viridian Forest (verified)
         }
         
-        for trainerName, checkpointName in pairs(rivalMapping) do
+        -- Trainer ID mappings (from Ironmon Tracker's TrainerData.lua)
+        -- Using constants for better readability and maintainability
+        local TRAINER_ID_CHECKPOINTS = {
+            -- Rival battles
+            RIVAL2 = {326, 327},  -- Route 22 (first encounter)
+            RIVAL3 = {328, 329},  -- Cerulean City
+            RIVAL4 = {330, 331},  -- S.S. Anne
+            RIVAL5 = {332, 333},  -- Pokemon Tower
+            RIVAL6 = {334, 335},  -- Silph Co.
+            RIVAL7 = {336, 337},  -- Route 22 (second encounter)
+            
+            -- Giovanni battles
+            ROCKETHIDEOUT = {348},  -- Rocket Hideout
+            SILPHCO = {349},        -- Silph Co.
+            
+            -- Elite Four
+            LORELAI = {410},
+            BRUNO = {411},
+            AGATHA = {412},
+            LANCE = {413},
+            
+            -- Champion
+            CHAMP = {438, 439, 440}
+        }
+        
+        -- Check trainer class names first (for special cases)
+        for trainerName, checkpointName in pairs(CLASS_NAME_CHECKPOINTS) do
             if currentTrainers[trainerName] and not state.checkpointsNotified[checkpointName] then
                 return checkpointName
+            end
+        end
+        
+        -- Check trainer IDs for all other checkpoints
+        for checkpointName, trainerIds in pairs(TRAINER_ID_CHECKPOINTS) do
+            for _, trainerId in ipairs(trainerIds) do
+                if Program.hasDefeatedTrainer and Program.hasDefeatedTrainer(trainerId) then
+                    if not state.checkpointsNotified[checkpointName] then
+                        return checkpointName
+                    end
+                end
             end
         end
         
