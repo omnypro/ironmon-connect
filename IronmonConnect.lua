@@ -170,6 +170,16 @@ local function IronmonConnect()
         "LORELAI", "BRUNO", "AGATHA", "LANCE", "CHAMP"
     }
     
+    -- Helper function to create events with timestamps
+    local function createEvent(eventType, eventData)
+        return {
+            type = eventType,
+            data = eventData,
+            timestamp = os.time(),
+            frame = emu and emu.framecount and emu.framecount() or 0
+        }
+    end
+    
     -- Enhanced send function with connection checking
     local function send(data)
         -- Check if connected before sending
@@ -221,21 +231,18 @@ local function IronmonConnect()
         end
         
         -- Send initialization event
-        send({
-            type = "init",
-            data = {
-                version = self.version,
-                tracker_version = Main.TrackerVersion or "Unknown",
-                game = GameSettings.game or "Unknown",
-                features = {
-                    runTracking = Config.get("runTracking"),
-                    battleEvents = Config.get("battleEvents"),
-                    checkpoints = Config.get("checkpoints"),
-                    teamUpdates = Config.get("teamUpdates"),
-                    locationTracking = Config.get("locationTracking")
-                }
+        send(createEvent("init", {
+            version = self.version,
+            tracker_version = Main.TrackerVersion or "Unknown",
+            game = GameSettings.game or "Unknown",
+            features = {
+                runTracking = Config.get("runTracking"),
+                battleEvents = Config.get("battleEvents"),
+                checkpoints = Config.get("checkpoints"),
+                teamUpdates = Config.get("teamUpdates"),
+                locationTracking = Config.get("locationTracking")
             }
-        })
+        }))
         
         -- Process initial seed if available
         if Main and Main.currentSeed then
@@ -271,13 +278,10 @@ local function IronmonConnect()
                 end
             elseif state.lastTeamHash[slot] then
                 -- Pokemon was removed from this slot
-                send({
-                    type = "team_update",
-                    data = {
-                        slot = slot,
-                        pokemon = nil
-                    }
-                })
+                send(createEvent("team_update", {
+                    slot = slot,
+                    pokemon = nil
+                }))
                 state.lastTeamHash[slot] = nil
             end
         end
@@ -312,13 +316,10 @@ local function IronmonConnect()
             end
         end
         
-        send({
-            type = "team_update",
-            data = {
-                slot = slot,
-                pokemon = pokemonData
-            }
-        })
+        send(createEvent("team_update", {
+            slot = slot,
+            pokemon = pokemonData
+        }))
     end
     
     -- Process seed changes
@@ -329,13 +330,10 @@ local function IronmonConnect()
         if currentSeed ~= state.lastSeed then
             Config.log("info", "Seed number is now " .. tostring(currentSeed) .. ".")
             
-            send({
-                type = "seed",
-                data = {
-                    value = currentSeed,
-                    attempt = currentSeed -- Main.currentSeed represents attempt number
-                }
-            })
+            send(createEvent("seed", {
+                value = currentSeed,
+                attempt = currentSeed -- Main.currentSeed represents attempt number
+            }))
             
             state.lastSeed = currentSeed
             
@@ -354,13 +352,10 @@ local function IronmonConnect()
             local routeInfo = RouteData.Info[mapId]
             local locationName = routeInfo and routeInfo.name or "Unknown"
             
-            send({
-                type = "location",
-                data = {
-                    mapId = mapId,
-                    name = locationName
-                }
-            })
+            send(createEvent("location", {
+                mapId = mapId,
+                name = locationName
+            }))
             
             state.lastArea = mapId
         end
@@ -387,15 +382,12 @@ local function IronmonConnect()
             end
             
             if index and not state.checkpointsNotified[checkpointName] then
-                send({
-                    type = "checkpoint",
-                    data = {
-                        name = checkpointName,
-                        index = index,
-                        total = #Checkpoints,
-                        seed = state.lastSeed
-                    }
-                })
+                send(createEvent("checkpoint", {
+                    name = checkpointName,
+                    index = index,
+                    total = #Checkpoints,
+                    seed = state.lastSeed
+                }))
                 
                 state.checkpointsNotified[checkpointName] = true
                 state.currentCheckpointIndex = index + 1
@@ -530,12 +522,9 @@ local function IronmonConnect()
         state.currentCheckpointIndex = 1
         
         -- Send reset event
-        send({
-            type = "reset",
-            data = {
-                reason = "game_state_reloaded"
-            }
-        })
+        send(createEvent("reset", {
+            reason = "game_state_reloaded"
+        }))
     end
     
     return self
