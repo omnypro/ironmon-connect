@@ -462,18 +462,29 @@ local function IronmonConnect()
         local isWildEncounter = Battle and Battle.isWildEncounter or false
         local trainerId = Battle and Battle.opposingTrainerId or nil
         
-        -- Get opponent Pokemon
-        local opposingPokemon = TrackerAPI.getOpposingPokemon()
+        -- Get opponent Pokemon using Battle.getViewedPokemon or Tracker.getPokemon
+        local opposingPokemon = nil
+        
+        -- First try to get the enemy Pokemon slot from Battle.Combatants
+        if Battle and Battle.Combatants and Battle.Combatants.LeftOther then
+            opposingPokemon = Tracker.getPokemon(Battle.Combatants.LeftOther, false)
+        end
+        
+        -- If that doesn't work, try slot 1 for enemy team
+        if not opposingPokemon then
+            opposingPokemon = Tracker.getPokemon(1, false)
+        end
+        
         local opponentData = nil
         
-        if opposingPokemon and opposingPokemon.pokemonID > 0 then
+        if opposingPokemon and opposingPokemon.pokemonID and opposingPokemon.pokemonID > 0 then
             opponentData = {
                 id = opposingPokemon.pokemonID,
-                name = opposingPokemon.nickname or PokemonData.Pokemon[opposingPokemon.pokemonID].name,
-                level = opposingPokemon.level,
+                name = opposingPokemon.name or (PokemonData.Pokemon[opposingPokemon.pokemonID] and PokemonData.Pokemon[opposingPokemon.pokemonID].name) or "Unknown",
+                level = opposingPokemon.level or 0,
                 hp = {
-                    current = opposingPokemon.hp,
-                    max = opposingPokemon.hpmax
+                    current = opposingPokemon.hp or 0,
+                    max = opposingPokemon.hpmax or 0
                 }
             }
         end
