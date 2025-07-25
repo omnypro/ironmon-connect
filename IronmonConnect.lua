@@ -21,6 +21,9 @@ local function IronmonConnect()
         checkpoints = true,
         teamUpdates = true,
         locationTracking = true,
+        encounterTracking = true,
+        battleAnalytics = true,
+        moveTracking = true,
         
         -- Debug settings
         debug = false,
@@ -241,7 +244,10 @@ local function IronmonConnect()
                 battleEvents = Config.get("battleEvents"),
                 checkpoints = Config.get("checkpoints"),
                 teamUpdates = Config.get("teamUpdates"),
-                locationTracking = Config.get("locationTracking")
+                locationTracking = Config.get("locationTracking"),
+                encounterTracking = Config.get("encounterTracking"),
+                battleAnalytics = Config.get("battleAnalytics"),
+                moveTracking = Config.get("moveTracking")
             }
         }))
         
@@ -489,11 +495,42 @@ local function IronmonConnect()
             }
         end
         
-        -- Send battle start event
+        -- Store battle opponent for encounter tracking
+        if isWildEncounter and opponentData then
+            state.lastBattleOpponent = {
+                pokemonID = opponentData.id,
+                level = opponentData.level,
+                mapId = TrackerAPI.getMapId()
+            }
+            state.isWildBattle = true
+        else
+            state.isWildBattle = false
+        end
+        
+        -- Get encounter data if available
+        local encounterData = nil
+        if isWildEncounter and opponentData then
+            local mapId = TrackerAPI.getMapId()
+            local routeInfo = RouteData.Info[mapId]
+            
+            -- Get total encounters for this Pokemon
+            local wildEncounters = Tracker.getEncounters and Tracker.getEncounters(opponentData.id, true) or 0
+            local trainerEncounters = Tracker.getEncounters and Tracker.getEncounters(opponentData.id, false) or 0
+            
+            encounterData = {
+                location = routeInfo and routeInfo.name or "Unknown",
+                mapId = mapId,
+                totalWildEncounters = wildEncounters,
+                totalTrainerEncounters = trainerEncounters
+            }
+        end
+        
+        -- Send enhanced battle start event
         send(createEvent("battle_started", {
             isWild = isWildEncounter,
             trainerId = trainerId,
-            opponent = opponentData
+            opponent = opponentData,
+            encounter = encounterData
         }))
         
         Config.log("info", string.format("Battle started: %s", 
@@ -531,8 +568,23 @@ local function IronmonConnect()
         Config.log("info", string.format("Battle ended: %s", 
             playerWon and "Victory" or "Defeat"))
         
+        -- Track encounter if it was a wild battle
+        if Config.isFeatureEnabled("encounterTracking") and state.isWildBattle and state.lastBattleOpponent then
+            self.trackEncounter(state.lastBattleOpponent)
+        end
+        
         -- Reset battle state
         state.battleStartFrame = nil
+        state.battleTurn = 0
+        state.lastBattleOpponent = nil
+        state.isWildBattle = false
+        
+        -- Clear HP tracking
+        for k, v in pairs(state) do
+            if string.find(k, "_hp_") then
+                state[k] = nil
+            end
+        end
     end
     
     -- Hook: Called when battle data updates
@@ -543,6 +595,109 @@ local function IronmonConnect()
         if not state.battleStartFrame then
             state.battleStartFrame = emu.framecount()
         end
+        
+        -- Track battle moves and damage
+        if Config.isFeatureEnabled("battleAnalytics") and state.frameCounter % 10 == 0 then  -- Check every 10 frames during battle
+            self.processBattleAnalytics()
+        end
+    end
+    
+    -- Track encounter statistics
+    function self.trackEncounter(encounterInfo)
+        if not encounterInfo or not encounterInfo.pokemonID then return end
+        
+        local mapId = encounterInfo.mapId
+        local routeInfo = RouteData.Info[mapId]
+        
+        -- Get route encounters if available
+        local routeEncounters = {}
+        if Tracker.getRouteEncounters then
+            -- Try to get encounters for different terrain types
+            for _, area in ipairs({"land", "surfing", "fishing", "underwater"}) do
+                local encounters = Tracker.getRouteEncounters(mapId, area)
+                if encounters and #encounters > 0 then
+                    routeEncounters[area] = encounters
+                end
+            end
+        end
+        
+        -- Send encounter event with statistics
+        send(createEvent("encounter", {
+            pokemon = {
+                id = encounterInfo.pokemonID,
+                name = PokemonData.Pokemon[encounterInfo.pokemonID] and PokemonData.Pokemon[encounterInfo.pokemonID].name or "Unknown",
+                level = encounterInfo.level
+            },
+            location = {
+                mapId = mapId,
+                name = routeInfo and routeInfo.name or "Unknown",
+                routeEncounters = routeEncounters
+            },
+            statistics = {
+                totalEncountersHere = #(routeEncounters.land or {}) + #(routeEncounters.surfing or {}) + #(routeEncounters.fishing or {}),
+                isFirstOnRoute = not self.hasEncounteredOnRoute(encounterInfo.pokemonID, mapId, routeEncounters)
+            }
+        }))
+    end
+    
+    -- Check if Pokemon was previously encountered on this route
+    function self.hasEncounteredOnRoute(pokemonID, mapId, routeEncounters)
+        for area, encounters in pairs(routeEncounters or {}) do
+            for _, encounteredId in ipairs(encounters) do
+                if encounteredId == pokemonID then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    
+    -- Process battle analytics during combat
+    function self.processBattleAnalytics()
+        if not Battle or not Battle.inActiveBattle then return end
+        
+        -- Get active Pokemon
+        local playerMon = TrackerAPI.getPlayerPokemon(Battle.Combatants and Battle.Combatants.LeftOwn or 1)
+        local enemyMon = Tracker.getPokemon(Battle.Combatants and Battle.Combatants.LeftOther or 1, false)
+        
+        if not playerMon or not enemyMon then return end
+        
+        -- Check for HP changes (damage dealt/received)
+        local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
+        local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
+        
+        local playerPrevHP = state[playerHPKey] or playerMon.curHP
+        local enemyPrevHP = state[enemyHPKey] or enemyMon.hp
+        
+        local playerDamage = playerPrevHP - (playerMon.curHP or 0)
+        local enemyDamage = enemyPrevHP - (enemyMon.hp or 0)
+        
+        -- Send damage event if significant damage occurred
+        if playerDamage > 0 or enemyDamage > 0 then
+            send(createEvent("battle_damage", {
+                turn = state.battleTurn or 0,
+                playerDamage = playerDamage > 0 and playerDamage or 0,
+                enemyDamage = enemyDamage > 0 and enemyDamage or 0,
+                playerMon = {
+                    id = playerMon.pokemonID,
+                    currentHP = playerMon.curHP,
+                    maxHP = playerMon.stats and playerMon.stats.hp or 0,
+                    level = playerMon.level
+                },
+                enemyMon = {
+                    id = enemyMon.pokemonID,
+                    currentHP = enemyMon.hp or 0,
+                    maxHP = enemyMon.hpmax or 0,
+                    level = enemyMon.level
+                }
+            }))
+            
+            state.battleTurn = (state.battleTurn or 0) + 1
+        end
+        
+        -- Update HP tracking
+        state[playerHPKey] = playerMon.curHP
+        state[enemyHPKey] = enemyMon.hp
     end
     
     -- Temporary checkpoint detection (from original code)
