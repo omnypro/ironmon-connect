@@ -525,12 +525,34 @@ local function IronmonConnect()
             }
         end
         
+        -- Get known moves for this Pokemon
+        local knownMoves = nil
+        if Config.isFeatureEnabled("moveTracking") and opposingPokemon then
+            local moves = Tracker.getMoves and Tracker.getMoves(opposingPokemon.pokemonID, opposingPokemon.level) or {}
+            if next(moves) then  -- Check if table has any entries
+                knownMoves = {}
+                for _, move in pairs(moves) do
+                    if move and move.id and move.id > 0 then
+                        local moveData = MoveData.Moves[move.id]
+                        table.insert(knownMoves, {
+                            id = move.id,
+                            name = moveData and moveData.name or "Unknown",
+                            type = moveData and moveData.type or "Unknown",
+                            minLevel = move.minLv,
+                            maxLevel = move.maxLv
+                        })
+                    end
+                end
+            end
+        end
+        
         -- Send enhanced battle start event
         send(createEvent("battle_started", {
             isWild = isWildEncounter,
             trainerId = trainerId,
             opponent = opponentData,
-            encounter = encounterData
+            encounter = encounterData,
+            knownMoves = knownMoves
         }))
         
         Config.log("info", string.format("Battle started: %s", 
@@ -579,9 +601,9 @@ local function IronmonConnect()
         state.lastBattleOpponent = nil
         state.isWildBattle = false
         
-        -- Clear HP tracking
+        -- Clear HP and move tracking
         for k, v in pairs(state) do
-            if string.find(k, "_hp_") then
+            if string.find(k, "_hp_") or string.find(k, "moves_") then
                 state[k] = nil
             end
         end
@@ -698,6 +720,67 @@ local function IronmonConnect()
         -- Update HP tracking
         state[playerHPKey] = playerMon.curHP
         state[enemyHPKey] = enemyMon.hp
+        
+        -- Track moves if enabled
+        if Config.isFeatureEnabled("moveTracking") then
+            self.trackBattleMoves(enemyMon)
+        end
+    end
+    
+    -- Track moves used by enemy Pokemon
+    function self.trackBattleMoves(enemyMon)
+        if not enemyMon or not enemyMon.pokemonID then return end
+        
+        -- Get known moves for this Pokemon
+        local knownMoves = Tracker.getMoves and Tracker.getMoves(enemyMon.pokemonID, enemyMon.level) or {}
+        
+        -- Check if we have new move data to report
+        local moveListKey = "moves_" .. enemyMon.pokemonID .. "_" .. (enemyMon.level or 0)
+        local previousMoveCount = state[moveListKey] or 0
+        local currentMoveCount = 0
+        
+        -- Count valid moves
+        for _, move in pairs(knownMoves) do
+            if move and move.id and move.id > 0 then
+                currentMoveCount = currentMoveCount + 1
+            end
+        end
+        
+        -- If we have new moves, send an update
+        if currentMoveCount > previousMoveCount then
+            local moveList = {}
+            for _, move in pairs(knownMoves) do
+                if move and move.id and move.id > 0 then
+                    local moveData = MoveData.Moves[move.id]
+                    table.insert(moveList, {
+                        id = move.id,
+                        name = moveData and moveData.name or "Unknown",
+                        type = moveData and moveData.type or "Unknown",
+                        power = moveData and moveData.power or 0,
+                        accuracy = moveData and moveData.accuracy or 0,
+                        pp = moveData and moveData.pp or 0,
+                        level = move.level or enemyMon.level
+                    })
+                end
+            end
+            
+            -- Send move history event
+            send(createEvent("move_history", {
+                pokemon = {
+                    id = enemyMon.pokemonID,
+                    name = PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Unknown",
+                    level = enemyMon.level
+                },
+                moves = moveList,
+                totalMovesKnown = currentMoveCount,
+                allMovesKnown = currentMoveCount >= 4
+            }))
+            
+            state[moveListKey] = currentMoveCount
+            Config.log("info", string.format("Tracked %d moves for %s", 
+                currentMoveCount, 
+                PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Pokemon"))
+        end
     end
     
     -- Temporary checkpoint detection (from original code)
