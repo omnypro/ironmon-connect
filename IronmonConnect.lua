@@ -154,6 +154,7 @@ local function IronmonConnect()
         currentCheckpointIndex = 1,
         wasConnected = false,  -- Track connection state changes
         lastTeamHash = {},  -- Track team changes per slot
+        battleStartFrame = nil,  -- Track battle duration
         dirtyFlags = {
             seed = false,
             location = false,
@@ -453,12 +454,84 @@ local function IronmonConnect()
         
     end
     
+    -- Hook: Called when battle starts
+    function self.afterBattleBegins()
+        if not Config.isFeatureEnabled("battleEvents") then return end
+        
+        -- Get battle information
+        local isWildEncounter = Battle and Battle.isWildEncounter or false
+        local trainerId = Battle and Battle.opposingTrainerId or nil
+        
+        -- Get opponent Pokemon
+        local opposingPokemon = TrackerAPI.getOpposingPokemon()
+        local opponentData = nil
+        
+        if opposingPokemon and opposingPokemon.pokemonID > 0 then
+            opponentData = {
+                id = opposingPokemon.pokemonID,
+                name = opposingPokemon.nickname or PokemonData.Pokemon[opposingPokemon.pokemonID].name,
+                level = opposingPokemon.level,
+                hp = {
+                    current = opposingPokemon.hp,
+                    max = opposingPokemon.hpmax
+                }
+            }
+        end
+        
+        -- Send battle start event
+        send(createEvent("battle_started", {
+            isWild = isWildEncounter,
+            trainerId = trainerId,
+            opponent = opponentData
+        }))
+        
+        Config.log("info", string.format("Battle started: %s", 
+            isWildEncounter and "Wild encounter" or "Trainer battle"))
+    end
+    
+    -- Hook: Called when battle ends
+    function self.afterBattleEnds()
+        if not Config.isFeatureEnabled("battleEvents") then return end
+        
+        -- Try to determine battle outcome
+        local playerWon = true  -- Default assumption
+        
+        -- Check if player's lead Pokemon fainted
+        local leadPokemon = TrackerAPI.getPlayerPokemon(1)
+        if leadPokemon and leadPokemon.hp == 0 then
+            -- Check if any Pokemon are still alive
+            local hasAlivePokemon = false
+            for i = 1, 6 do
+                local pokemon = TrackerAPI.getPlayerPokemon(i)
+                if pokemon and pokemon.hp > 0 then
+                    hasAlivePokemon = true
+                    break
+                end
+            end
+            playerWon = hasAlivePokemon
+        end
+        
+        -- Send battle end event
+        send(createEvent("battle_ended", {
+            playerWon = playerWon,
+            duration = state.battleStartFrame and (emu.framecount() - state.battleStartFrame) or 0
+        }))
+        
+        Config.log("info", string.format("Battle ended: %s", 
+            playerWon and "Victory" or "Defeat"))
+        
+        -- Reset battle state
+        state.battleStartFrame = nil
+    end
+    
     -- Hook: Called when battle data updates
     function self.afterBattleDataUpdate()
         if not Config.isFeatureEnabled("battleEvents") then return end
         
-        -- Mark battle system as dirty for processing
-        state.dirtyFlags.battle = true
+        -- Track battle start frame if not set
+        if not state.battleStartFrame then
+            state.battleStartFrame = emu.framecount()
+        end
     end
     
     -- Temporary checkpoint detection (from original code)
