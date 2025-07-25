@@ -153,6 +153,7 @@ local function IronmonConnect()
         checkpointsNotified = {},
         currentCheckpointIndex = 1,
         wasConnected = false,  -- Track connection state changes
+        lastTeamHash = {},  -- Track team changes per slot
         dirtyFlags = {
             seed = false,
             location = false,
@@ -246,9 +247,79 @@ local function IronmonConnect()
             state.checkpointsNotified[checkpoint] = false
         end
         
+        -- Send initial team state
+        if Config.isFeatureEnabled("teamUpdates") then
+            self.processTeam()
+        end
+        
         state.initialized = true
     end
     
+    -- Process team changes
+    function self.processTeam()
+        if not Config.isFeatureEnabled("teamUpdates") then return end
+        
+        -- Check each party slot for changes
+        for slot = 1, 6 do
+            local pokemon = TrackerAPI.getPlayerPokemon(slot)
+            if pokemon and pokemon.pokemonID > 0 then
+                local hash = Utils.hashPokemonState(pokemon)
+                if hash ~= state.lastTeamHash[slot] then
+                    -- Team change detected!
+                    self.sendTeamUpdate(slot, pokemon)
+                    state.lastTeamHash[slot] = hash
+                end
+            elseif state.lastTeamHash[slot] then
+                -- Pokemon was removed from this slot
+                send({
+                    type = "team_update",
+                    data = {
+                        slot = slot,
+                        pokemon = nil
+                    }
+                })
+                state.lastTeamHash[slot] = nil
+            end
+        end
+    end
+    
+    -- Send team update event
+    function self.sendTeamUpdate(slot, pokemon)
+        local pokemonData = {
+            id = pokemon.pokemonID,
+            name = PokemonData.Pokemon[pokemon.pokemonID] and PokemonData.Pokemon[pokemon.pokemonID].name or "Unknown",
+            level = pokemon.level,
+            hp = {
+                current = pokemon.curHP,
+                max = pokemon.stats and pokemon.stats.hp or 0
+            },
+            status = pokemon.status,
+            item = pokemon.heldItem
+        }
+        
+        -- Add moves if available
+        if pokemon.moves then
+            pokemonData.moves = {}
+            for i = 1, 4 do
+                if pokemon.moves[i] and pokemon.moves[i] > 0 then
+                    local moveData = MoveData.Moves[pokemon.moves[i]]
+                    table.insert(pokemonData.moves, {
+                        id = pokemon.moves[i],
+                        name = moveData and moveData.name or "Unknown",
+                        pp = pokemon.movePPs and pokemon.movePPs[i] or 0
+                    })
+                end
+            end
+        end
+        
+        send({
+            type = "team_update",
+            data = {
+                slot = slot,
+                pokemon = pokemonData
+            }
+        })
+    end
     
     -- Process seed changes
     function self.processSeed()
@@ -346,6 +417,7 @@ local function IronmonConnect()
             state.dirtyFlags.seed = true
             state.dirtyFlags.location = true
             state.dirtyFlags.checkpoint = true
+            state.dirtyFlags.team = true
         end
     end
     
@@ -380,6 +452,11 @@ local function IronmonConnect()
         if state.dirtyFlags.checkpoint then
             self.processCheckpoints()
             state.dirtyFlags.checkpoint = false
+        end
+        
+        if state.dirtyFlags.team then
+            self.processTeam()
+            state.dirtyFlags.team = false
         end
         
     end
