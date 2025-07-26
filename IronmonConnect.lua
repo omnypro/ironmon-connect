@@ -365,15 +365,61 @@ local function IronmonConnect()
         
         local mapId = TrackerAPI.getMapId()
         if mapId ~= state.lastArea then
-            local routeInfo = RouteData.Info[mapId]
+            -- Get enhanced route info
+            local routeInfo = TrackerAPI.getRouteInfo and TrackerAPI.getRouteInfo(mapId) or RouteData.Info[mapId]
             local locationName = routeInfo and routeInfo.name or "Unknown"
             
+            -- Get trainers on this route
+            local routeTrainers = {}
+            if TrackerAPI.getTrainersOnRoute then
+                local trainers = TrackerAPI.getTrainersOnRoute(mapId)
+                if trainers then
+                    for _, trainer in ipairs(trainers) do
+                        if trainer and not trainer.defeated then
+                            table.insert(routeTrainers, {
+                                id = trainer.id,
+                                className = trainer.class and trainer.class.name or "Unknown",
+                                fullName = trainer.fullname or trainer.name or "Unknown",
+                                defeated = trainer.defeated or false
+                            })
+                        end
+                    end
+                end
+            end
+            
+            -- Get wild encounters for this route (we already track this)
+            local wildEncounters = {}
+            if Tracker.getRouteEncounters then
+                for _, area in ipairs({"land", "surfing", "fishing"}) do
+                    local encounters = Tracker.getRouteEncounters(mapId, area)
+                    if encounters and #encounters > 0 then
+                        wildEncounters[area] = {}
+                        for _, pokemonId in ipairs(encounters) do
+                            table.insert(wildEncounters[area], {
+                                id = pokemonId,
+                                name = PokemonData.Pokemon[pokemonId] and PokemonData.Pokemon[pokemonId].name or "Unknown"
+                            })
+                        end
+                    end
+                end
+            end
+            
+            -- Send enhanced location event
             send(createEvent("location", {
                 mapId = mapId,
-                name = locationName
+                name = locationName,
+                trainers = {
+                    total = #routeTrainers,
+                    undefeated = routeTrainers
+                },
+                wildEncounters = wildEncounters,
+                hasEncounters = next(wildEncounters) ~= nil
             }))
             
             state.lastArea = mapId
+            
+            Config.log("info", string.format("Entered %s (Trainers: %d)", 
+                locationName, #routeTrainers))
         end
     end
     
