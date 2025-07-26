@@ -24,6 +24,7 @@ local function IronmonConnect()
         encounterTracking = true,
         battleAnalytics = true,
         moveTracking = true,
+        itemTracking = true,
         
         -- Debug settings
         debug = false,
@@ -158,11 +159,13 @@ local function IronmonConnect()
         wasConnected = false,  -- Track connection state changes
         lastTeamHash = {},  -- Track team changes per slot
         battleStartFrame = nil,  -- Track battle duration
+        lastItemSnapshot = {},  -- Track item quantities
         dirtyFlags = {
             seed = false,
             location = false,
             checkpoint = false,
-            team = false
+            team = false,
+            items = false
         }
     }
     
@@ -247,7 +250,8 @@ local function IronmonConnect()
                 locationTracking = Config.get("locationTracking"),
                 encounterTracking = Config.get("encounterTracking"),
                 battleAnalytics = Config.get("battleAnalytics"),
-                moveTracking = Config.get("moveTracking")
+                moveTracking = Config.get("moveTracking"),
+                itemTracking = Config.get("itemTracking")
             }
         }))
         
@@ -264,6 +268,11 @@ local function IronmonConnect()
         -- Send initial team state
         if Config.isFeatureEnabled("teamUpdates") then
             self.processTeam()
+        end
+        
+        -- Initialize item tracking
+        if Config.isFeatureEnabled("itemTracking") then
+            state.lastItemSnapshot = self.deepCopyItems(TrackerAPI.getBagItems and TrackerAPI.getBagItems() or {})
         end
         
         state.initialized = true
@@ -368,6 +377,154 @@ local function IronmonConnect()
         end
     end
     
+    -- Process item changes
+    function self.processItems()
+        if not Config.isFeatureEnabled("itemTracking") then return end
+        
+        -- Get current item data
+        local currentItems = TrackerAPI.getBagItems and TrackerAPI.getBagItems() or {}
+        
+        -- Compare with last snapshot to detect changes
+        for category, items in pairs(currentItems) do
+            if type(items) == "table" then
+                for itemId, quantity in pairs(items) do
+                    local lastQuantity = 0
+                    if state.lastItemSnapshot[category] and state.lastItemSnapshot[category][itemId] then
+                        lastQuantity = state.lastItemSnapshot[category][itemId]
+                    end
+                    
+                    -- Detect item usage (quantity decreased)
+                    if quantity < lastQuantity then
+                        self.sendItemUsage(itemId, category, lastQuantity - quantity, "used")
+                    -- Detect item gained (quantity increased)
+                    elseif quantity > lastQuantity then
+                        self.sendItemUsage(itemId, category, quantity - lastQuantity, "gained")
+                    end
+                end
+            end
+        end
+        
+        -- Update snapshot
+        state.lastItemSnapshot = self.deepCopyItems(currentItems)
+        
+        -- Send healing summary if we have healing items
+        if currentItems.HPHeals and next(currentItems.HPHeals) then
+            self.sendHealingSummary(currentItems.HPHeals)
+        end
+    end
+    
+    -- Send healing item summary
+    function self.sendHealingSummary(healingItems)
+        local totalHealing = 0
+        local itemDetails = {}
+        
+        -- Calculate total healing potential
+        for itemId, quantity in pairs(healingItems) do
+            if quantity > 0 then
+                local healAmount = self.getHealingAmount(itemId)
+                totalHealing = totalHealing + (healAmount * quantity)
+                
+                local itemName = TrackerAPI.getItemName and TrackerAPI.getItemName(itemId) or "Unknown"
+                table.insert(itemDetails, {
+                    id = itemId,
+                    name = itemName,
+                    quantity = quantity,
+                    healAmount = healAmount,
+                    totalHeal = healAmount * quantity
+                })
+            end
+        end
+        
+        -- Get lead Pokemon for percentage calculation
+        local leadPokemon = TrackerAPI.getPlayerPokemon(1)
+        local healingPercentage = 0
+        if leadPokemon and leadPokemon.stats and leadPokemon.stats.hp > 0 then
+            healingPercentage = math.floor((totalHealing / leadPokemon.stats.hp) * 100)
+        end
+        
+        -- Send healing summary event
+        send(createEvent("healing_summary", {
+            totalHealing = totalHealing,
+            healingPercentage = healingPercentage,
+            items = itemDetails,
+            leadPokemon = leadPokemon and {
+                id = leadPokemon.pokemonID,
+                name = PokemonData.Pokemon[leadPokemon.pokemonID] and PokemonData.Pokemon[leadPokemon.pokemonID].name or "Unknown",
+                maxHP = leadPokemon.stats and leadPokemon.stats.hp or 0
+            } or nil
+        }))
+    end
+    
+    -- Get healing amount for specific items
+    function self.getHealingAmount(itemId)
+        -- Healing amounts based on Gen 3 items
+        local healingAmounts = {
+            [13] = 20,   -- Potion
+            [14] = 50,   -- Super Potion
+            [15] = 200,  -- Hyper Potion
+            [16] = 9999, -- Max Potion
+            [17] = 100,  -- Fresh Water
+            [18] = 60,   -- Soda Pop
+            [19] = 80,   -- Lemonade
+            [20] = 120,  -- Moomoo Milk
+            [21] = 20,   -- Berry Juice
+            [26] = 10,   -- Oran Berry
+            [139] = 30,  -- Sitrus Berry
+        }
+        
+        return healingAmounts[itemId] or 0
+    end
+    
+    -- Send item usage event
+    function self.sendItemUsage(itemId, category, quantityChange, action)
+        -- Get item name
+        local itemName = "Unknown"
+        if TrackerAPI.getItemName then
+            itemName = TrackerAPI.getItemName(itemId) or "Unknown"
+        end
+        
+        -- Determine context (battle or overworld)
+        local context = "overworld"
+        if Battle and Battle.inActiveBattle then
+            context = "battle"
+        end
+        
+        -- Send item event
+        send(createEvent("item_usage", {
+            item = {
+                id = itemId,
+                name = itemName,
+                category = category,
+                quantity = quantityChange
+            },
+            action = action,  -- "used" or "gained"
+            context = context,  -- "battle" or "overworld"
+            location = {
+                mapId = TrackerAPI.getMapId(),
+                name = RouteData.Info[TrackerAPI.getMapId()] and RouteData.Info[TrackerAPI.getMapId()].name or "Unknown"
+            }
+        }))
+        
+        Config.log("info", string.format("Item %s: %s x%d (%s)", 
+            action, itemName, quantityChange, context))
+    end
+    
+    -- Deep copy items table to avoid reference issues
+    function self.deepCopyItems(items)
+        local copy = {}
+        for category, categoryItems in pairs(items) do
+            if type(categoryItems) == "table" then
+                copy[category] = {}
+                for itemId, quantity in pairs(categoryItems) do
+                    copy[category][itemId] = quantity
+                end
+            else
+                copy[category] = categoryItems
+            end
+        end
+        return copy
+    end
+    
     -- Process checkpoint detection (temporary implementation)
     function self.processCheckpoints()
         if not Config.isFeatureEnabled("checkpoints") then return end
@@ -417,6 +574,7 @@ local function IronmonConnect()
             state.dirtyFlags.location = true
             state.dirtyFlags.checkpoint = true
             state.dirtyFlags.team = true
+            state.dirtyFlags.items = true
         end
     end
     
@@ -456,6 +614,11 @@ local function IronmonConnect()
         if state.dirtyFlags.team then
             self.processTeam()
             state.dirtyFlags.team = false
+        end
+        
+        if state.dirtyFlags.items then
+            self.processItems()
+            state.dirtyFlags.items = false
         end
         
     end
