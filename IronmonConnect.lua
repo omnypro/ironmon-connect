@@ -696,6 +696,20 @@ local function IronmonConnect()
         
         -- Send damage event if significant damage occurred
         if playerDamage > 0 or enemyDamage > 0 then
+            -- Calculate move effectiveness if damage was dealt
+            local playerEffectiveness = nil
+            local enemyEffectiveness = nil
+            
+            if Config.isFeatureEnabled("moveTracking") and enemyDamage > 0 then
+                -- Player attacked enemy - calculate effectiveness
+                playerEffectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
+            end
+            
+            if Config.isFeatureEnabled("moveTracking") and playerDamage > 0 then
+                -- Enemy attacked player - calculate effectiveness  
+                enemyEffectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
+            end
+            
             send(createEvent("battle_damage", {
                 turn = state.battleTurn or 0,
                 playerDamage = playerDamage > 0 and playerDamage or 0,
@@ -711,6 +725,10 @@ local function IronmonConnect()
                     currentHP = enemyMon.hp or 0,
                     maxHP = enemyMon.hpmax or 0,
                     level = enemyMon.level
+                },
+                effectiveness = {
+                    playerMove = playerEffectiveness,
+                    enemyMove = enemyEffectiveness
                 }
             }))
             
@@ -724,6 +742,14 @@ local function IronmonConnect()
         -- Track moves if enabled
         if Config.isFeatureEnabled("moveTracking") then
             self.trackBattleMoves(enemyMon)
+            
+            -- Track move effectiveness patterns
+            if playerEffectiveness then
+                self.trackMoveEffectiveness(playerMon, enemyMon, playerEffectiveness, "player")
+            end
+            if enemyEffectiveness then
+                self.trackMoveEffectiveness(enemyMon, playerMon, enemyEffectiveness, "enemy")
+            end
         end
     end
     
@@ -781,6 +807,158 @@ local function IronmonConnect()
                 currentMoveCount, 
                 PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Pokemon"))
         end
+    end
+    
+    -- Track move effectiveness patterns for analysis
+    function self.trackMoveEffectiveness(attacker, defender, effectivenessData, attackerType)
+        if not effectivenessData then return end
+        
+        local effectiveness = effectivenessData.effectiveness or 1.0
+        local moveType = effectivenessData.moveType
+        local moveName = effectivenessData.moveName
+        
+        -- Only report significant effectiveness (not neutral)
+        if effectiveness ~= 1.0 then
+            local defenderData = PokemonData.Pokemon[defender.pokemonID]
+            local defenderTypes = {}
+            if defenderData then
+                defenderTypes[1] = defenderData.type1
+                defenderTypes[2] = defenderData.type2
+            end
+            
+            send(createEvent("move_effectiveness", {
+                attacker = {
+                    id = attacker.pokemonID,
+                    name = PokemonData.Pokemon[attacker.pokemonID] and PokemonData.Pokemon[attacker.pokemonID].name or "Unknown",
+                    level = attacker.level,
+                    role = attackerType  -- "player" or "enemy"
+                },
+                defender = {
+                    id = defender.pokemonID,
+                    name = PokemonData.Pokemon[defender.pokemonID] and PokemonData.Pokemon[defender.pokemonID].name or "Unknown",
+                    types = defenderTypes
+                },
+                move = {
+                    id = effectivenessData.moveId,
+                    name = moveName,
+                    type = moveType,
+                    power = effectivenessData.movePower
+                },
+                effectiveness = {
+                    multiplier = effectiveness,
+                    description = self.getEffectivenessDescription(effectiveness),
+                    stab = effectivenessData.stab,
+                    finalMultiplier = effectivenessData.finalMultiplier
+                }
+            }))
+        end
+    end
+    
+    -- Get human-readable effectiveness description
+    function self.getEffectivenessDescription(multiplier)
+        if multiplier <= 0 then
+            return "No effect"
+        elseif multiplier < 0.5 then
+            return "Extremely not very effective"
+        elseif multiplier < 1.0 then
+            return "Not very effective"
+        elseif multiplier > 2.0 then
+            return "Extremely effective"
+        elseif multiplier > 1.0 then
+            return "Super effective"
+        else
+            return "Normal effectiveness"
+        end
+    end
+    
+    -- Calculate move effectiveness between attacker and defender
+    function self.calculateMoveEffectiveness(attacker, defender)
+        if not attacker or not defender then return nil end
+        
+        -- We don't know which specific move was used, so we'll calculate
+        -- effectiveness for all known moves and find the most likely one
+        local moves = Tracker.getMoves and Tracker.getMoves(attacker.pokemonID, attacker.level) or {}
+        local effectivenessOptions = {}
+        
+        -- Get defender's types
+        local defenderTypes = {}
+        local pokemonData = PokemonData.Pokemon[defender.pokemonID]
+        if pokemonData then
+            defenderTypes[1] = pokemonData.type1 or "Unknown"
+            defenderTypes[2] = pokemonData.type2 or pokemonData.type1 or "Unknown"
+        else
+            return nil
+        end
+        
+        -- Calculate effectiveness for each known move
+        for _, move in pairs(moves) do
+            if move and move.id and move.id > 0 then
+                local moveData = MoveData.Moves[move.id]
+                if moveData and moveData.type then
+                    local effectiveness = self.getTypeEffectiveness(moveData.type, defenderTypes)
+                    local hasSTAB = self.hasSTAB(attacker.pokemonID, moveData.type)
+                    
+                    table.insert(effectivenessOptions, {
+                        moveId = move.id,
+                        moveName = moveData.name or "Unknown",  
+                        moveType = moveData.type,
+                        movePower = moveData.power or 0,
+                        effectiveness = effectiveness,
+                        stab = hasSTAB,
+                        finalMultiplier = effectiveness * (hasSTAB and 1.5 or 1.0)
+                    })
+                end
+            end
+        end
+        
+        -- If we have move options, return the first one (could be enhanced to pick most likely)
+        if #effectivenessOptions > 0 then
+            return effectivenessOptions[1]
+        end
+        
+        return nil
+    end
+    
+    -- Calculate type effectiveness using Utils function if available
+    function self.getTypeEffectiveness(moveType, defenderTypes)
+        if Utils and Utils.netEffectiveness then
+            return Utils.netEffectiveness(nil, moveType, defenderTypes)
+        end
+        
+        -- Fallback: manual type effectiveness calculation
+        return self.calculateTypeEffectivenessManual(moveType, defenderTypes)
+    end
+    
+    -- Manual type effectiveness calculation as fallback
+    function self.calculateTypeEffectivenessManual(moveType, defenderTypes)
+        if not MoveData or not MoveData.TypeToEffectiveness then
+            return 1.0  -- Default to neutral if no data
+        end
+        
+        local total = 1.0
+        
+        -- Check effectiveness against first type
+        if MoveData.TypeToEffectiveness[moveType] and MoveData.TypeToEffectiveness[moveType][defenderTypes[1]] then
+            total = total * MoveData.TypeToEffectiveness[moveType][defenderTypes[1]]
+        end
+        
+        -- Check effectiveness against second type if different
+        if defenderTypes[2] and defenderTypes[2] ~= defenderTypes[1] then
+            if MoveData.TypeToEffectiveness[moveType] and MoveData.TypeToEffectiveness[moveType][defenderTypes[2]] then
+                total = total * MoveData.TypeToEffectiveness[moveType][defenderTypes[2]]
+            end
+        end
+        
+        return total
+    end
+    
+    -- Check if a Pokemon gets STAB for a move type
+    function self.hasSTAB(pokemonID, moveType)
+        local pokemonData = PokemonData.Pokemon[pokemonID]
+        if pokemonData then
+            return pokemonData.type1 == moveType or pokemonData.type2 == moveType
+        end
+        return false
     end
     
     -- Temporary checkpoint detection (from original code)
