@@ -666,8 +666,10 @@ local function IronmonConnect()
                 mapId = TrackerAPI.getMapId()
             }
             state.isWildBattle = true
+            state.lastTrainerId = nil
         else
             state.isWildBattle = false
+            state.lastTrainerId = trainerId
         end
         
         -- Get encounter data if available
@@ -709,13 +711,39 @@ local function IronmonConnect()
             end
         end
         
+        -- Get trainer info for trainer battles
+        local trainerInfo = nil
+        if not isWildEncounter and trainerId then
+            local trainerData = TrainerData.getTrainerInfo and TrainerData.getTrainerInfo(trainerId)
+            if trainerData then
+                trainerInfo = {
+                    id = trainerId,
+                    className = trainerData.class and trainerData.class.name or "Unknown",
+                    fullName = trainerData.fullname or trainerData.name or "Unknown Trainer",
+                    partySize = trainerData.party and #trainerData.party or 1
+                }
+                
+                -- Add party preview if available
+                if trainerData.party then
+                    trainerInfo.party = {}
+                    for i, mon in ipairs(trainerData.party) do
+                        table.insert(trainerInfo.party, {
+                            species = mon.pokemonID or mon.species,
+                            level = mon.level or 0
+                        })
+                    end
+                end
+            end
+        end
+        
         -- Send enhanced battle start event
         send(createEvent("battle_started", {
             isWild = isWildEncounter,
             trainerId = trainerId,
             opponent = opponentData,
             encounter = encounterData,
-            knownMoves = knownMoves
+            knownMoves = knownMoves,
+            trainer = trainerInfo
         }))
         
         Config.log("info", string.format("Battle started: %s", 
@@ -750,6 +778,11 @@ local function IronmonConnect()
             duration = state.battleStartFrame and (emu.framecount() - state.battleStartFrame) or 0
         }))
         
+        -- If player won a trainer battle, send trainer defeated event
+        if playerWon and not state.isWildBattle and state.lastTrainerId then
+            self.sendTrainerDefeated(state.lastTrainerId)
+        end
+        
         Config.log("info", string.format("Battle ended: %s", 
             playerWon and "Victory" or "Defeat"))
         
@@ -763,6 +796,7 @@ local function IronmonConnect()
         state.battleTurn = 0
         state.lastBattleOpponent = nil
         state.isWildBattle = false
+        state.lastTrainerId = nil
         
         -- Clear HP and move tracking
         for k, v in pairs(state) do
@@ -785,6 +819,59 @@ local function IronmonConnect()
         if Config.isFeatureEnabled("battleAnalytics") and state.frameCounter % 10 == 0 then  -- Check every 10 frames during battle
             self.processBattleAnalytics()
         end
+    end
+    
+    -- Send trainer defeated event with detailed info
+    function self.sendTrainerDefeated(trainerId)
+        if not trainerId then return end
+        
+        local trainerData = TrainerData.getTrainerInfo and TrainerData.getTrainerInfo(trainerId)
+        if not trainerData then return end
+        
+        local defeatedInfo = {
+            id = trainerId,
+            className = trainerData.class and trainerData.class.name or "Unknown",
+            fullName = trainerData.fullname or trainerData.name or "Unknown Trainer",
+            location = {
+                mapId = TrackerAPI.getMapId(),
+                name = RouteData.Info[TrackerAPI.getMapId()] and RouteData.Info[TrackerAPI.getMapId()].name or "Unknown"
+            }
+        }
+        
+        -- Add party info if available
+        if trainerData.party then
+            defeatedInfo.party = {}
+            for i, mon in ipairs(trainerData.party) do
+                local pokemonId = mon.pokemonID or mon.species
+                table.insert(defeatedInfo.party, {
+                    species = pokemonId,
+                    name = PokemonData.Pokemon[pokemonId] and PokemonData.Pokemon[pokemonId].name or "Unknown",
+                    level = mon.level or 0
+                })
+            end
+        end
+        
+        -- Check if this is a story checkpoint
+        local checkpointName = nil
+        for checkpoint, trainerIds in pairs({RIVAL2 = {326, 327}, RIVAL3 = {328, 329}, RIVAL4 = {330, 331}, RIVAL5 = {332, 333}, RIVAL6 = {334, 335}, RIVAL7 = {336, 337}, ROCKETHIDEOUT = {348}, SILPHCO = {349}, LORELAI = {410}, BRUNO = {411}, AGATHA = {412}, LANCE = {413}, CHAMP = {438, 439, 440}}) do
+            for _, id in ipairs(trainerIds) do
+                if id == trainerId then
+                    checkpointName = checkpoint
+                    break
+                end
+            end
+            if checkpointName then break end
+        end
+        
+        defeatedInfo.isCheckpoint = checkpointName ~= nil
+        defeatedInfo.checkpointName = checkpointName
+        
+        send(createEvent("trainer_defeated", defeatedInfo))
+        
+        Config.log("info", string.format("Defeated %s (%s)%s", 
+            defeatedInfo.fullName, 
+            defeatedInfo.className,
+            checkpointName and " - Checkpoint: " .. checkpointName or ""))
     end
     
     -- Track encounter statistics
