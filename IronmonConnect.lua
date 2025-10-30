@@ -803,38 +803,45 @@ local function IronmonConnect()
     -- Hook: Called when battle ends
     function self.afterBattleEnds()
         if not Config.isFeatureEnabled("battleEvents") then return end
-        
-        -- Try to determine battle outcome
-        local playerWon = true  -- Default assumption
-        
-        -- Check if player's lead Pokemon fainted
-        local leadPokemon = TrackerAPI.getPlayerPokemon(1)
-        if leadPokemon and leadPokemon.hp == 0 then
-            -- Check if any Pokemon are still alive
-            local hasAlivePokemon = false
-            for i = 1, 6 do
-                local pokemon = TrackerAPI.getPlayerPokemon(i)
-                if pokemon and pokemon.hp > 0 then
-                    hasAlivePokemon = true
-                    break
-                end
-            end
-            playerWon = hasAlivePokemon
+
+        -- Read battle outcome from memory
+        -- Values: 0 = In battle, 1 = Won, 2 = Lost, 4 = Fled, 7 = Caught
+        local battleOutcome = Memory.readbyte(GameSettings.gBattleOutcome)
+
+        local playerWon = battleOutcome == 1
+        local playerLost = battleOutcome == 2
+        local playerFled = battleOutcome == 4
+        local playerCaught = battleOutcome == 7
+
+        -- Determine outcome string
+        local outcomeStr = "Unknown"
+        if playerWon then
+            outcomeStr = "Victory"
+        elseif playerCaught then
+            outcomeStr = "Caught"
+        elseif playerFled then
+            outcomeStr = "Fled"
+        elseif playerLost then
+            outcomeStr = "Defeat"
         end
-        
+
         -- Send battle end event
         send(createEvent("battle_ended", {
+            outcome = outcomeStr,
+            battleOutcome = battleOutcome,
             playerWon = playerWon,
+            playerCaught = playerCaught,
+            playerFled = playerFled,
+            playerLost = playerLost,
             duration = state.battleStartFrame and (emu.framecount() - state.battleStartFrame) or 0
         }))
-        
+
         -- If player won a trainer battle, send trainer defeated event
         if playerWon and not state.isWildBattle and state.lastTrainerId then
             self.sendTrainerDefeated(state.lastTrainerId)
         end
-        
-        Config.log("info", string.format("Battle ended: %s", 
-            playerWon and "Victory" or "Defeat"))
+
+        Config.log("info", string.format("Battle ended: %s", outcomeStr))
         
         -- Track encounter if it was a wild battle
         if Config.isFeatureEnabled("encounterTracking") and state.isWildBattle and state.lastBattleOpponent then
@@ -1279,19 +1286,14 @@ local function IronmonConnect()
         
         -- CHECKPOINT DETECTION STRATEGY:
         -- Use trainer IDs for all checkpoint detection (most reliable)
-        -- Trainer class names are unreliable because rivals use RivalFRLGA/B/C classes, not Youngster
 
-        -- Trainer class name mappings (for battles with unique class names)
-        local CLASS_NAME_CHECKPOINTS = {
-            ["Bug Catcher 3"] = "FIRSTTRAINER"  -- Viridian Forest first trainer
-        }
-        
-        -- Trainer ID mappings (from Ironmon Tracker's TrainerData.lua)
+        -- Trainer ID mappings (from Ironmon Tracker's TrainerData.lua and v1.0)
         -- Each rival battle has 3 IDs (one for each starter choice):
         -- Middle=Charmander, Left=Squirtle, Right=Bulbasaur
         local TRAINER_ID_CHECKPOINTS = {
             -- Rival battles (verified from TrainerData.lua lines 764-788)
             RIVAL1 = {326, 327, 328},  -- Oak's Lab
+            FIRSTTRAINER = {102, 115},  -- Viridian Forest first Bug Catcher (any in range)
             RIVAL2 = {329, 330, 331},  -- Route 22 (pre-Viridian Forest)
             RIVAL3 = {332, 333, 334},  -- Cerulean City
             RIVAL4 = {426, 427, 428},  -- S.S. Anne
@@ -1312,18 +1314,8 @@ local function IronmonConnect()
             -- Champion
             CHAMP = {438, 439, 440}
         }
-        
-        -- Check trainer class names first (for special cases)
-        for trainerName, checkpointName in pairs(CLASS_NAME_CHECKPOINTS) do
-            if Config.get("debug") and currentTrainers[trainerName] then
-                Config.log("debug", string.format("Found trainer class: %s", trainerName))
-            end
-            if currentTrainers[trainerName] and not state.checkpointsNotified[checkpointName] then
-                return checkpointName
-            end
-        end
-        
-        -- Check trainer IDs for all other checkpoints
+
+        -- Check trainer IDs for checkpoints
         for checkpointName, trainerIds in pairs(TRAINER_ID_CHECKPOINTS) do
             for _, trainerId in ipairs(trainerIds) do
                 if Program.hasDefeatedTrainer and Program.hasDefeatedTrainer(trainerId) then
