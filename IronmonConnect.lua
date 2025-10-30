@@ -176,6 +176,32 @@ local function IronmonConnect()
         "RIVAL6", "SILPHCO", "SABRINA", "BLAINE", "GIOVANNI", "RIVAL7",
         "LORELAI", "BRUNO", "AGATHA", "LANCE", "CHAMP"
     }
+
+    -- Trainer ID to checkpoint mapping (verified from TrainerData.lua)
+    local TRAINER_ID_CHECKPOINTS = {
+        -- Rival battles (verified from TrainerData.lua lines 764-788)
+        RIVAL1 = {326, 327, 328},  -- Oak's Lab
+        FIRSTTRAINER = {102, 115},  -- Viridian Forest first Bug Catcher (any in range)
+        RIVAL2 = {329, 330, 331},  -- Route 22 (pre-Viridian Forest)
+        RIVAL3 = {332, 333, 334},  -- Cerulean City
+        RIVAL4 = {426, 427, 428},  -- S.S. Anne
+        RIVAL5 = {429, 430, 431},  -- Pokemon Tower
+        RIVAL6 = {432, 433, 434},  -- Silph Co
+        RIVAL7 = {435, 436, 437},  -- Route 22 (pre-Victory Road)
+
+        -- Giovanni battles
+        ROCKETHIDEOUT = {348},  -- Rocket Hideout
+        SILPHCO = {349},        -- Silph Co.
+
+        -- Elite Four
+        LORELAI = {410},
+        BRUNO = {411},
+        AGATHA = {412},
+        LANCE = {413},
+
+        -- Champion
+        CHAMP = {438, 439, 440}
+    }
     
     -- Helper function to create events with timestamps
     local function createEvent(eventType, eventData)
@@ -764,19 +790,19 @@ local function IronmonConnect()
         -- Get trainer info for trainer battles
         local trainerInfo = nil
         if not isWildEncounter and trainerId then
-            local trainerData = TrainerData.getTrainerInfo and TrainerData.getTrainerInfo(trainerId)
-            if trainerData then
+            local trainerGameData = TrackerAPI.getTrainerGameData and TrackerAPI.getTrainerGameData(trainerId)
+            if trainerGameData then
                 trainerInfo = {
                     id = trainerId,
-                    className = trainerData.class and trainerData.class.name or "Unknown",
-                    fullName = trainerData.fullname or trainerData.name or "Unknown Trainer",
-                    partySize = trainerData.party and #trainerData.party or 1
+                    className = trainerGameData.trainerClass or "Unknown",
+                    fullName = trainerGameData.trainerName or "Unknown Trainer",
+                    partySize = trainerGameData.partySize or 1
                 }
-                
+
                 -- Add party preview if available
-                if trainerData.party then
+                if trainerGameData.party then
                     trainerInfo.party = {}
-                    for i, mon in ipairs(trainerData.party) do
+                    for i, mon in ipairs(trainerGameData.party) do
                         table.insert(trainerInfo.party, {
                             species = mon.pokemonID or mon.species,
                             level = mon.level or 0
@@ -881,24 +907,25 @@ local function IronmonConnect()
     -- Send trainer defeated event with detailed info
     function self.sendTrainerDefeated(trainerId)
         if not trainerId then return end
-        
-        local trainerData = TrainerData.getTrainerInfo and TrainerData.getTrainerInfo(trainerId)
-        if not trainerData then return end
-        
+
+        -- Get trainer data from ROM (has actual names)
+        local trainerGameData = TrackerAPI.getTrainerGameData and TrackerAPI.getTrainerGameData(trainerId)
+        if not trainerGameData then return end
+
         local defeatedInfo = {
             id = trainerId,
-            className = trainerData.class and trainerData.class.name or "Unknown",
-            fullName = trainerData.fullname or trainerData.name or "Unknown Trainer",
+            className = trainerGameData.trainerClass or "Unknown",
+            fullName = trainerGameData.trainerName or "Unknown Trainer",
             location = {
                 mapId = TrackerAPI.getMapId(),
                 name = RouteData.Info[TrackerAPI.getMapId()] and RouteData.Info[TrackerAPI.getMapId()].name or "Unknown"
             }
         }
-        
+
         -- Add party info if available
-        if trainerData.party then
+        if trainerGameData.party then
             defeatedInfo.party = {}
-            for i, mon in ipairs(trainerData.party) do
+            for i, mon in ipairs(trainerGameData.party) do
                 local pokemonId = mon.pokemonID or mon.species
                 table.insert(defeatedInfo.party, {
                     species = pokemonId,
@@ -907,10 +934,10 @@ local function IronmonConnect()
                 })
             end
         end
-        
+
         -- Check if this is a story checkpoint
         local checkpointName = nil
-        for checkpoint, trainerIds in pairs({RIVAL2 = {326, 327}, RIVAL3 = {328, 329}, RIVAL4 = {330, 331}, RIVAL5 = {332, 333}, RIVAL6 = {334, 335}, RIVAL7 = {336, 337}, ROCKETHIDEOUT = {348}, SILPHCO = {349}, LORELAI = {410}, BRUNO = {411}, AGATHA = {412}, LANCE = {413}, CHAMP = {438, 439, 440}}) do
+        for checkpoint, trainerIds in pairs(TRAINER_ID_CHECKPOINTS) do
             for _, id in ipairs(trainerIds) do
                 if id == trainerId then
                     checkpointName = checkpoint
@@ -1286,34 +1313,7 @@ local function IronmonConnect()
         
         -- CHECKPOINT DETECTION STRATEGY:
         -- Use trainer IDs for all checkpoint detection (most reliable)
-
-        -- Trainer ID mappings (from Ironmon Tracker's TrainerData.lua and v1.0)
-        -- Each rival battle has 3 IDs (one for each starter choice):
-        -- Middle=Charmander, Left=Squirtle, Right=Bulbasaur
-        local TRAINER_ID_CHECKPOINTS = {
-            -- Rival battles (verified from TrainerData.lua lines 764-788)
-            RIVAL1 = {326, 327, 328},  -- Oak's Lab
-            FIRSTTRAINER = {102, 115},  -- Viridian Forest first Bug Catcher (any in range)
-            RIVAL2 = {329, 330, 331},  -- Route 22 (pre-Viridian Forest)
-            RIVAL3 = {332, 333, 334},  -- Cerulean City
-            RIVAL4 = {426, 427, 428},  -- S.S. Anne
-            RIVAL5 = {429, 430, 431},  -- Pokemon Tower
-            RIVAL6 = {432, 433, 434},  -- Silph Co
-            RIVAL7 = {435, 436, 437},  -- Route 22 (pre-Victory Road)
-            
-            -- Giovanni battles
-            ROCKETHIDEOUT = {348},  -- Rocket Hideout
-            SILPHCO = {349},        -- Silph Co.
-            
-            -- Elite Four
-            LORELAI = {410},
-            BRUNO = {411},
-            AGATHA = {412},
-            LANCE = {413},
-            
-            -- Champion
-            CHAMP = {438, 439, 440}
-        }
+        -- Trainer ID mappings defined at module level (TRAINER_ID_CHECKPOINTS)
 
         -- Check trainer IDs for checkpoints
         for checkpointName, trainerIds in pairs(TRAINER_ID_CHECKPOINTS) do
