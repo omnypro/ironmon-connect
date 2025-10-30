@@ -1,7 +1,7 @@
--- IronmonConnect v2.1 - Single file version for Ironmon Tracker
+-- IronmonConnect v2.2 - Single file version for Ironmon Tracker
 local function IronmonConnect()
     local self = {}
-    self.version = "2.1"
+    self.version = "2.2"
     self.name = "Ironmon Connect"
     self.author = "Omnyist Productions"
     self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
@@ -115,33 +115,6 @@ local function IronmonConnect()
         if messageLevel >= currentLevel then
             console.log(string.format("> IMC: [%s] %s", level:upper(), message))
         end
-    end
-    
-    -- ===========================================
-    -- UTILS MODULE (embedded)
-    -- ===========================================
-    local Utils = {}
-    
-    -- Generate UUID v4
-    function Utils.generateUUID()
-        local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-        return string.gsub(template, '[xy]', function(c)
-            local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
-            return string.format('%x', v)
-        end)
-    end
-    
-    -- Calculate hash of a pokemon state for change detection
-    function Utils.hashPokemonState(pokemon)
-        if not pokemon then return "" end
-        
-        return string.format("%d:%d:%d:%d:%d",
-            pokemon.pokemonID or 0,
-            pokemon.level or 0,
-            pokemon.curHP or 0,
-            pokemon.status or 0,
-            pokemon.heldItem or 0
-        )
     end
     
     -- ===========================================
@@ -301,14 +274,35 @@ local function IronmonConnect()
     end
     
     -- Process team changes
+    -- Create hash of Pokemon state (only meaningful changes, not HP/PP/status)
+    local function hashPokemonTeamState(pokemon)
+        if not pokemon or not pokemon.pokemonID then return nil end
+
+        -- Hash only includes: species, level, moves, held item
+        -- Does NOT include: HP, PP, status (those change too frequently)
+        local moveHash = ""
+        if pokemon.moves then
+            for i = 1, 4 do
+                moveHash = moveHash .. (pokemon.moves[i] or 0) .. ","
+            end
+        end
+
+        return string.format("%d:%d:%s:%d",
+            pokemon.pokemonID or 0,
+            pokemon.level or 0,
+            moveHash,
+            pokemon.heldItem or 0
+        )
+    end
+
     function self.processTeam()
         if not Config.isFeatureEnabled("teamUpdates") then return end
-        
+
         -- Check each party slot for changes
         for slot = 1, 6 do
             local pokemon = TrackerAPI.getPlayerPokemon(slot)
             if pokemon and pokemon.pokemonID > 0 then
-                local hash = Utils.hashPokemonState(pokemon)
+                local hash = hashPokemonTeamState(pokemon)
                 if hash ~= state.lastTeamHash[slot] then
                     -- Team change detected!
                     local pokemonName = PokemonData.Pokemon[pokemon.pokemonID] and PokemonData.Pokemon[pokemon.pokemonID].name or "Unknown"
@@ -784,6 +778,17 @@ local function IronmonConnect()
         state.battleStartFrame = emu.framecount()
         state.battleTurn = -1  -- -1 to match Ironmon Tracker's initialization
 
+        -- Initialize HP tracking for battle analytics
+        if Config.isFeatureEnabled("battleAnalytics") then
+            local playerMon = TrackerAPI.getPlayerPokemon(Battle.Combatants and Battle.Combatants.LeftOwn or 1)
+            if playerMon and playerMon.pokemonID then
+                state["player_hp_" .. playerMon.pokemonID] = playerMon.curHP
+            end
+            if opposingPokemon and opposingPokemon.pokemonID then
+                state["enemy_hp_" .. opposingPokemon.pokemonID] = opposingPokemon.hp
+            end
+        end
+
         -- Send enhanced battle start event
         send(createEvent("battle_started", {
             isWild = isWildEncounter,
@@ -937,7 +942,7 @@ local function IronmonConnect()
         local totalWildEncounters = Tracker.getEncounters and Tracker.getEncounters(pokemonID, true) or 0
         local totalTrainerEncounters = Tracker.getEncounters and Tracker.getEncounters(pokemonID, false) or 0
 
-        -- This is the first encounter if the count is 1 (just incremented by Tracker.incrementEnemyEncounter)
+        -- This is the first encounter if the count is 1 (just incremented by Battle.incrementEnemyEncounter)
         local isFirstEncounter = (totalWildEncounters == 1)
 
         -- Get route encounters if available
@@ -979,6 +984,61 @@ local function IronmonConnect()
             isFirstEncounter and "yes" or "no"))
     end
     
+    --[[
+    ==================================================================================
+    ADVANCED BATTLE STATS - IMPLEMENTATION NOTES
+    ==================================================================================
+
+    The following stats are available via memory reading but not currently implemented:
+
+    1. CRITICAL HITS
+       - Location: gMoveResultFlags (GameSettings.gMoveResultFlags)
+       - Method: Memory.readbyte(GameSettings.gMoveResultFlags)
+       - Flag: Check bit 0x01 (MOVE_RESULT_CRITICAL_HIT)
+
+    2. MOVE MISS/ACCURACY
+       - Location: gMoveResultFlags (GameSettings.gMoveResultFlags)
+       - Method: Memory.readbyte(GameSettings.gMoveResultFlags)
+       - Flags:
+         * 0x02 = MOVE_RESULT_SUPER_EFFECTIVE
+         * 0x04 = MOVE_RESULT_NOT_VERY_EFFECTIVE
+         * 0x08 = MOVE_RESULT_DOESNT_AFFECT_FOE (immunity)
+         * 0x10 = MOVE_RESULT_ONE_HIT_KO
+         * 0x20 = MOVE_RESULT_FAILED (missed or failed)
+
+    3. STAT CHANGES (Attack/Defense/Speed/etc boosts)
+       - Location: gBattleMons + offsetBattlePokemonStatStages
+       - Method: Read stat stages for each mon
+       - Offsets: Program.Addresses.offsetBattlePokemonStatStages
+       - Format: 2 dwords (8 bytes) per Pokemon
+         * First dword: HP, ATK, DEF, SPEED (1 byte each)
+         * Second dword: SP.ATK, SP.DEF, ACCURACY, EVASION (1 byte each)
+       - Values: 6 = neutral, <6 = decreased, >6 = increased
+       - Implementation: Track previous values and detect changes
+
+    4. STATUS EFFECTS APPLIED
+       - Location: Pokemon status field
+       - Method: Tracker.getPokemon(slot, isOwn).status
+       - Values: 0 = none, non-zero = status condition
+       - Implementation: Track previous status and detect changes
+
+    5. ABILITY ACTIVATIONS
+       - Location: Tracked internally by Battle.trackAbilityChanges()
+       - Method: Would require hooking into Battle module's ability tracking
+       - Challenge: No direct API access, would need memory reading
+
+    6. MOVE USED (already available)
+       - Location: gBattleResults + offsetBattleResultsLastAttackerMove
+       - Method: Memory.readword(GameSettings.gBattleResults + Program.Addresses.offsetBattleResultsLastAttackerMove + attackerIndex)
+       - Note: This is what Tracker uses to record moves
+
+    To implement these:
+    - Add Memory.readbyte/readword/readdword calls in processBattleAnalytics()
+    - Track previous state to detect changes
+    - Add fields to battle_action event
+    ==================================================================================
+    ]]--
+
     -- Process battle analytics during combat
     function self.processBattleAnalytics()
         if not Battle or not Battle.inActiveBattle then return end
@@ -996,6 +1056,11 @@ local function IronmonConnect()
 
             if not playerMon or not enemyMon then return end
 
+            -- Determine who attacked this turn (Battle.attacker: 0/2 = player, 1/3 = enemy)
+            local attacker = Battle.attacker or 0
+            local playerAttacked = (attacker == 0 or attacker == 2)
+            local enemyAttacked = (attacker == 1 or attacker == 3)
+
             -- Check for HP changes (damage dealt/received)
             local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
             local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
@@ -1009,6 +1074,60 @@ local function IronmonConnect()
             -- Update HP tracking
             state[playerHPKey] = playerMon.curHP
             state[enemyHPKey] = enemyMon.hp
+
+            -- Send battle_action event for detailed play-by-play
+            if currentTurn > 0 then  -- Skip turn 0 (battle start)
+                local actionData = {
+                    turn = currentTurn,
+                    attacker = playerAttacked and "player" or "enemy",
+                    damageDealt = playerAttacked and enemyDamage or playerDamage,
+                    playerMon = {
+                        id = playerMon.pokemonID,
+                        name = PokemonData.Pokemon[playerMon.pokemonID] and PokemonData.Pokemon[playerMon.pokemonID].name or "Unknown",
+                        hp = playerMon.curHP,
+                        maxHP = playerMon.stats and playerMon.stats.hp or 0,
+                        level = playerMon.level,
+                        status = playerMon.status or 0
+                    },
+                    enemyMon = {
+                        id = enemyMon.pokemonID,
+                        name = PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Unknown",
+                        hp = enemyMon.hp or 0,
+                        maxHP = enemyMon.hpmax or 0,
+                        level = enemyMon.level,
+                        status = enemyMon.status or 0
+                    }
+                }
+
+                -- Add move effectiveness if damage was dealt
+                if playerAttacked and enemyDamage > 0 then
+                    local effectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
+                    if effectiveness then
+                        actionData.move = {
+                            id = effectiveness.moveId,
+                            name = effectiveness.moveName,
+                            type = effectiveness.moveType,
+                            power = effectiveness.movePower,
+                            effectiveness = effectiveness.effectiveness,
+                            stab = effectiveness.stab
+                        }
+                    end
+                elseif enemyAttacked and playerDamage > 0 then
+                    local effectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
+                    if effectiveness then
+                        actionData.move = {
+                            id = effectiveness.moveId,
+                            name = effectiveness.moveName,
+                            type = effectiveness.moveType,
+                            power = effectiveness.movePower,
+                            effectiveness = effectiveness.effectiveness,
+                            stab = effectiveness.stab
+                        }
+                    end
+                end
+
+                send(createEvent("battle_action", actionData))
+            end
 
             -- Send damage event if significant damage occurred
             if playerDamage > 0 or enemyDamage > 0 then
