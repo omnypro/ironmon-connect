@@ -1278,27 +1278,26 @@ local function IronmonConnect()
         end
         
         -- CHECKPOINT DETECTION STRATEGY:
-        -- We use a hybrid approach for checkpoint detection:
-        -- 1. Trainer class names for specific story battles (RIVAL1, FIRSTTRAINER)
-        -- 2. Trainer IDs for all other checkpoints (more reliable than class names)
-        -- This is intentional - DO NOT change without careful consideration
-        
+        -- Use trainer IDs for all checkpoint detection (most reliable)
+        -- Trainer class names are unreliable because rivals use RivalFRLGA/B/C classes, not Youngster
+
         -- Trainer class name mappings (for battles with unique class names)
         local CLASS_NAME_CHECKPOINTS = {
-            ["Youngster 1"] = "RIVAL1",      -- Oak's Lab (verified)
-            ["Bug Catcher 3"] = "FIRSTTRAINER"  -- Viridian Forest (verified)
+            ["Bug Catcher 3"] = "FIRSTTRAINER"  -- Viridian Forest first trainer
         }
         
         -- Trainer ID mappings (from Ironmon Tracker's TrainerData.lua)
-        -- Using constants for better readability and maintainability
+        -- Each rival battle has 3 IDs (one for each starter choice):
+        -- Middle=Charmander, Left=Squirtle, Right=Bulbasaur
         local TRAINER_ID_CHECKPOINTS = {
-            -- Rival battles
-            RIVAL2 = {326, 327},  -- Route 22 (first encounter)
-            RIVAL3 = {328, 329},  -- Cerulean City
-            RIVAL4 = {330, 331},  -- S.S. Anne
-            RIVAL5 = {332, 333},  -- Pokemon Tower
-            RIVAL6 = {334, 335},  -- Silph Co.
-            RIVAL7 = {336, 337},  -- Route 22 (second encounter)
+            -- Rival battles (verified from TrainerData.lua lines 764-788)
+            RIVAL1 = {326, 327, 328},  -- Oak's Lab
+            RIVAL2 = {329, 330, 331},  -- Route 22 (pre-Viridian Forest)
+            RIVAL3 = {332, 333, 334},  -- Cerulean City
+            RIVAL4 = {426, 427, 428},  -- S.S. Anne
+            RIVAL5 = {429, 430, 431},  -- Pokemon Tower
+            RIVAL6 = {432, 433, 434},  -- Silph Co
+            RIVAL7 = {435, 436, 437},  -- Route 22 (pre-Victory Road)
             
             -- Giovanni battles
             ROCKETHIDEOUT = {348},  -- Rocket Hideout
