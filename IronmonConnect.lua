@@ -169,7 +169,7 @@ local function IronmonConnect()
         }
     }
     
-    -- Temporary FRLG checkpoints (will be moved to JSON in future)
+    -- FRLG checkpoint definitions
     local Checkpoints = {
         "RIVAL1", "FIRSTTRAINER", "RIVAL2", "BROCK", "RIVAL3", "RIVAL4",
         "MISTY", "SURGE", "RIVAL5", "ROCKETHIDEOUT", "ERIKA", "KOGA",
@@ -573,7 +573,7 @@ local function IronmonConnect()
         return copy
     end
     
-    -- Process checkpoint detection (temporary implementation)
+    -- Process checkpoint detection
     function self.processCheckpoints()
         if not Config.isFeatureEnabled("checkpoints") then return end
         if GameSettings.game ~= "Pokemon FireRed" and GameSettings.game ~= "Pokemon LeafGreen" then
@@ -804,9 +804,9 @@ local function IronmonConnect()
     function self.afterBattleEnds()
         if not Config.isFeatureEnabled("battleEvents") then return end
 
-        -- Read battle outcome from memory
+        -- Get battle outcome from TrackerAPI
         -- Values: 0 = In battle, 1 = Won, 2 = Lost, 4 = Fled, 7 = Caught
-        local battleOutcome = Memory.readbyte(GameSettings.gBattleOutcome)
+        local battleOutcome = TrackerAPI.getBattleOutcome and TrackerAPI.getBattleOutcome() or 0
 
         local playerWon = battleOutcome == 1
         local playerLost = battleOutcome == 2
@@ -1268,7 +1268,7 @@ local function IronmonConnect()
         return false
     end
     
-    -- Temporary checkpoint detection (from original code)
+    -- Checkpoint detection logic
     function self.determineSplitChange()
         local defeatedTrainers = Program.getDefeatedTrainersByLocation()
         local currentTrainers = {}
