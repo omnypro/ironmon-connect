@@ -160,6 +160,7 @@ local function IronmonConnect()
         lastTeamHash = {},  -- Track team changes per slot
         battleStartFrame = nil,  -- Track battle duration
         lastItemSnapshot = {},  -- Track item quantities
+        encountersByRoute = {},  -- Track encounters per route: [mapId][pokemonID] = count
         dirtyFlags = {
             seed = false,
             location = false,
@@ -295,12 +296,17 @@ local function IronmonConnect()
         if Config.isFeatureEnabled("teamUpdates") then
             self.processTeam()
         end
-        
+
+        -- Send initial location
+        if Config.isFeatureEnabled("locationTracking") then
+            self.processLocation()
+        end
+
         -- Initialize item tracking
         if Config.isFeatureEnabled("itemTracking") then
             state.lastItemSnapshot = self.deepCopyItems(TrackerAPI.getBagItems and TrackerAPI.getBagItems() or {})
         end
-        
+
         state.initialized = true
     end
     
@@ -812,6 +818,10 @@ local function IronmonConnect()
             end
         end
         
+        -- Initialize battle state
+        state.battleStartFrame = emu.framecount()
+        state.battleTurn = 0
+
         -- Send enhanced battle start event
         send(createEvent("battle_started", {
             isWild = isWildEncounter,
@@ -821,8 +831,8 @@ local function IronmonConnect()
             knownMoves = knownMoves,
             trainer = trainerInfo
         }))
-        
-        Config.log("info", string.format("Battle started: %s", 
+
+        Config.log("info", string.format("Battle started: %s",
             isWildEncounter and "Wild encounter" or "Trainer battle"))
     end
     
@@ -892,14 +902,9 @@ local function IronmonConnect()
     -- Hook: Called when battle data updates
     function self.afterBattleDataUpdate()
         if not Config.isFeatureEnabled("battleEvents") then return end
-        
-        -- Track battle start frame if not set
-        if not state.battleStartFrame then
-            state.battleStartFrame = emu.framecount()
-        end
-        
-        -- Track battle moves and damage
-        if Config.isFeatureEnabled("battleAnalytics") and state.frameCounter % 10 == 0 then  -- Check every 10 frames during battle
+
+        -- Track battle moves and damage (check every 10 frames to reduce overhead)
+        if Config.isFeatureEnabled("battleAnalytics") and state.frameCounter % 10 == 0 then
             self.processBattleAnalytics()
         end
     end
@@ -961,10 +966,21 @@ local function IronmonConnect()
     -- Track encounter statistics
     function self.trackEncounter(encounterInfo)
         if not encounterInfo or not encounterInfo.pokemonID then return end
-        
+
         local mapId = encounterInfo.mapId
+        local pokemonID = encounterInfo.pokemonID
         local routeInfo = RouteData.Info[mapId]
-        
+
+        -- Initialize route tracking if needed
+        if not state.encountersByRoute[mapId] then
+            state.encountersByRoute[mapId] = {}
+        end
+
+        -- Track this encounter
+        local previousCount = state.encountersByRoute[mapId][pokemonID] or 0
+        state.encountersByRoute[mapId][pokemonID] = previousCount + 1
+        local isFirstOnRoute = (previousCount == 0)
+
         -- Get route encounters if available
         local routeEncounters = {}
         if Tracker.getRouteEncounters then
@@ -976,12 +992,12 @@ local function IronmonConnect()
                 end
             end
         end
-        
+
         -- Send encounter event with statistics
         send(createEvent("encounter", {
             pokemon = {
-                id = encounterInfo.pokemonID,
-                name = PokemonData.Pokemon[encounterInfo.pokemonID] and PokemonData.Pokemon[encounterInfo.pokemonID].name or "Unknown",
+                id = pokemonID,
+                name = PokemonData.Pokemon[pokemonID] and PokemonData.Pokemon[pokemonID].name or "Unknown",
                 level = encounterInfo.level
             },
             location = {
@@ -990,22 +1006,16 @@ local function IronmonConnect()
                 routeEncounters = routeEncounters
             },
             statistics = {
-                totalEncountersHere = #(routeEncounters.land or {}) + #(routeEncounters.surfing or {}) + #(routeEncounters.fishing or {}),
-                isFirstOnRoute = not self.hasEncounteredOnRoute(encounterInfo.pokemonID, mapId, routeEncounters)
+                totalEncountersHere = state.encountersByRoute[mapId][pokemonID],
+                isFirstOnRoute = isFirstOnRoute
             }
         }))
-    end
-    
-    -- Check if Pokemon was previously encountered on this route
-    function self.hasEncounteredOnRoute(pokemonID, mapId, routeEncounters)
-        for area, encounters in pairs(routeEncounters or {}) do
-            for _, encounteredId in ipairs(encounters) do
-                if encounteredId == pokemonID then
-                    return true
-                end
-            end
-        end
-        return false
+
+        Config.log("info", string.format("Encounter: %s on %s (count: %d, first: %s)",
+            PokemonData.Pokemon[pokemonID] and PokemonData.Pokemon[pokemonID].name or "Unknown",
+            routeInfo and routeInfo.name or "Unknown",
+            state.encountersByRoute[mapId][pokemonID],
+            isFirstOnRoute and "yes" or "no"))
     end
     
     -- Process battle analytics during combat
@@ -1354,13 +1364,16 @@ local function IronmonConnect()
     -- Hook: Called when game is reset
     function self.afterGameStateReloaded()
         Config.log("info", "Game state reloaded")
-        
+
         -- Reset state
         state.lastSeed = nil
         state.lastArea = nil
         state.checkpointsNotified = {}
         state.currentCheckpointIndex = 1
-        
+        state.encountersByRoute = {}
+        state.lastTeamHash = {}
+        state.lastItemSnapshot = {}
+
         -- Send reset event
         send(createEvent("reset", {
             reason = "game_state_reloaded"
