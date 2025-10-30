@@ -1,7 +1,7 @@
--- IronmonConnect v2.0 - Single file version for Ironmon Tracker
+-- IronmonConnect v2.1 - Single file version for Ironmon Tracker
 local function IronmonConnect()
     local self = {}
-    self.version = "2.0"
+    self.version = "2.1"
     self.name = "Ironmon Connect"
     self.author = "Omnyist Productions"
     self.description = "Uses BizHawk's socket functionality to provide run data to an external source."
