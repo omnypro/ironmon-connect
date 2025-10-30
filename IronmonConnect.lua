@@ -159,14 +159,7 @@ local function IronmonConnect()
         wasConnected = false,  -- Track connection state changes
         lastTeamHash = {},  -- Track team changes per slot
         battleStartFrame = nil,  -- Track battle duration
-        lastItemSnapshot = {},  -- Track item quantities
-        dirtyFlags = {
-            seed = false,
-            location = false,
-            checkpoint = false,
-            team = false,
-            items = false
-        }
+        lastItemSnapshot = {}  -- Track item quantities
     }
     
     -- FRLG checkpoint definitions
@@ -645,26 +638,9 @@ local function IronmonConnect()
     -- Hook: Called after each frame
     function self.afterProgramDataUpdate()
         if not state.initialized then return end
-        
+
         state.frameCounter = state.frameCounter + 1
-        
-        -- Check for changes every 30 frames (0.5 seconds)
-        if state.frameCounter >= 30 then
-            state.frameCounter = 0
-            
-            -- Mark systems as dirty instead of processing immediately
-            state.dirtyFlags.seed = true
-            state.dirtyFlags.location = true
-            state.dirtyFlags.checkpoint = true
-            state.dirtyFlags.team = true
-            state.dirtyFlags.items = true
-        end
-    end
-    
-    -- Hook: Called on program update tick (more efficient than every frame)
-    function self.onProgramUpdateTick()
-        if not state.initialized then return end
-        
+
         -- Periodic connection status check
         if state.frameCounter % 300 == 0 then  -- Check every ~5 seconds at 60fps
             local isConnected = comm.socketServerIsConnected()
@@ -677,33 +653,18 @@ local function IronmonConnect()
                 state.wasConnected = isConnected
             end
         end
-        
-        -- Process dirty flags
-        if state.dirtyFlags.seed then
+
+        -- Check for changes every 30 frames (0.5 seconds)
+        if state.frameCounter >= 30 then
+            state.frameCounter = 0
+
+            -- Process state changes
             self.processSeed()
-            state.dirtyFlags.seed = false
-        end
-        
-        if state.dirtyFlags.location then
             self.processLocation()
-            state.dirtyFlags.location = false
-        end
-        
-        if state.dirtyFlags.checkpoint then
             self.processCheckpoints()
-            state.dirtyFlags.checkpoint = false
-        end
-        
-        if state.dirtyFlags.team then
             self.processTeam()
-            state.dirtyFlags.team = false
-        end
-        
-        if state.dirtyFlags.items then
             self.processItems()
-            state.dirtyFlags.items = false
         end
-        
     end
     
     -- Hook: Called when battle starts
@@ -900,12 +861,12 @@ local function IronmonConnect()
         end
     end
     
-    -- Hook: Called when battle data updates
+    -- Hook: Called every 30 frames during battle
     function self.afterBattleDataUpdate()
         if not Config.isFeatureEnabled("battleEvents") then return end
 
-        -- Track battle moves and damage (check every 10 frames like Ironmon Tracker)
-        if Config.isFeatureEnabled("battleAnalytics") and state.frameCounter % 10 == 0 then
+        -- Track battle moves and damage
+        if Config.isFeatureEnabled("battleAnalytics") then
             self.processBattleAnalytics()
         end
     end
@@ -1364,29 +1325,11 @@ local function IronmonConnect()
     -- Hook: Called when unloading
     function self.unload()
         Config.log("info", "Shutting down " .. self.name)
-        
+
         -- Clean up
         state.initialized = false
     end
-    
-    -- Hook: Called when game is reset
-    function self.afterGameStateReloaded()
-        Config.log("info", "Game state reloaded")
 
-        -- Reset state
-        state.lastSeed = nil
-        state.lastArea = nil
-        state.checkpointsNotified = {}
-        state.currentCheckpointIndex = 1
-        state.lastTeamHash = {}
-        state.lastItemSnapshot = {}
-
-        -- Send reset event
-        send(createEvent("reset", {
-            reason = "game_state_reloaded"
-        }))
-    end
-    
     return self
 end
 
