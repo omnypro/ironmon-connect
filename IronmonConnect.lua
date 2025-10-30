@@ -740,16 +740,16 @@ local function IronmonConnect()
         -- Get known moves for this Pokemon
         local knownMoves = nil
         if Config.isFeatureEnabled("moveTracking") and opposingPokemon then
-            local moves = Tracker.getMoves and Tracker.getMoves(opposingPokemon.pokemonID, opposingPokemon.level) or {}
+            local moves = Tracker.getMoves(opposingPokemon.pokemonID, opposingPokemon.level)
             if next(moves) then  -- Check if table has any entries
                 knownMoves = {}
                 for _, move in pairs(moves) do
-                    if move and move.id and move.id > 0 then
-                        local moveData = MoveData.Moves[move.id]
+                    local moveData = MoveData.Moves[move.id]
+                    if moveData then
                         table.insert(knownMoves, {
                             id = move.id,
-                            name = moveData and moveData.name or "Unknown",
-                            type = moveData and moveData.type or "Unknown",
+                            name = moveData.name or "Unknown",
+                            type = moveData.type or "Unknown",
                             minLevel = move.minLv,
                             maxLevel = move.maxLv
                         })
