@@ -1360,13 +1360,9 @@ local function IronmonConnect()
         return nil
     end
     
-    -- Calculate type effectiveness using Utils function if available
+    -- Calculate type effectiveness using manual calculation
+    -- Note: Utils.netEffectiveness requires a move object and crashes with nil
     function self.getTypeEffectiveness(moveType, defenderTypes)
-        if Utils and Utils.netEffectiveness then
-            return Utils.netEffectiveness(nil, moveType, defenderTypes)
-        end
-        
-        -- Fallback: manual type effectiveness calculation
         return self.calculateTypeEffectivenessManual(moveType, defenderTypes)
     end
     
