@@ -994,10 +994,10 @@ local function IronmonConnect()
         -- Check for HP changes (damage dealt/received)
         local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
         local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
-        
-        local playerPrevHP = state[playerHPKey] or playerMon.curHP
-        local enemyPrevHP = state[enemyHPKey] or enemyMon.hp
-        
+
+        local playerPrevHP = state[playerHPKey] or (playerMon.curHP or 0)
+        local enemyPrevHP = state[enemyHPKey] or (enemyMon.hp or 0)
+
         local playerDamage = playerPrevHP - (playerMon.curHP or 0)
         local enemyDamage = enemyPrevHP - (enemyMon.hp or 0)
         
