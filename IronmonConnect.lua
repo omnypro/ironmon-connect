@@ -27,8 +27,8 @@ local function IronmonConnect()
         itemTracking = true,
         
         -- Debug settings
-        debug = false,
-        logLevel = "info" -- "debug", "info", "warn", "error"
+        debug = true,  -- Enable debug by default for v2.2
+        logLevel = "debug" -- "debug", "info", "warn", "error"
     }
     
     -- Current configuration (will be populated from saved settings)
@@ -553,7 +553,7 @@ local function IronmonConnect()
         
         -- Determine context (battle or overworld)
         local context = "overworld"
-        if Battle and Battle.inActiveBattle then
+        if Battle and Battle.inActiveBattle() then
             context = "battle"
         end
         
@@ -1041,7 +1041,7 @@ local function IronmonConnect()
 
     -- Process battle analytics during combat
     function self.processBattleAnalytics()
-        if not Battle or not Battle.inActiveBattle then return end
+        if not Battle or not Battle.inActiveBattle() then return end
 
         -- Use Ironmon Tracker's turn count (they already track this for us)
         local currentTurn = Battle.turnCount
