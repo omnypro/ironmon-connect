@@ -160,7 +160,6 @@ local function IronmonConnect()
         lastTeamHash = {},  -- Track team changes per slot
         battleStartFrame = nil,  -- Track battle duration
         lastItemSnapshot = {},  -- Track item quantities
-        encountersByRoute = {},  -- Track encounters per route: [mapId][pokemonID] = count
         dirtyFlags = {
             seed = false,
             location = false,
@@ -973,15 +972,12 @@ local function IronmonConnect()
         local pokemonID = encounterInfo.pokemonID
         local routeInfo = RouteData.Info[mapId]
 
-        -- Initialize route tracking if needed
-        if not state.encountersByRoute[mapId] then
-            state.encountersByRoute[mapId] = {}
-        end
+        -- Use Tracker's encounter count (they maintain this for us)
+        local totalWildEncounters = Tracker.getEncounters and Tracker.getEncounters(pokemonID, true) or 0
+        local totalTrainerEncounters = Tracker.getEncounters and Tracker.getEncounters(pokemonID, false) or 0
 
-        -- Track this encounter
-        local previousCount = state.encountersByRoute[mapId][pokemonID] or 0
-        state.encountersByRoute[mapId][pokemonID] = previousCount + 1
-        local isFirstOnRoute = (previousCount == 0)
+        -- This is the first encounter if the count is 1 (just incremented by Tracker.incrementEnemyEncounter)
+        local isFirstEncounter = (totalWildEncounters == 1)
 
         -- Get route encounters if available
         local routeEncounters = {}
@@ -1008,16 +1004,18 @@ local function IronmonConnect()
                 routeEncounters = routeEncounters
             },
             statistics = {
-                totalEncountersHere = state.encountersByRoute[mapId][pokemonID],
-                isFirstOnRoute = isFirstOnRoute
+                totalWildEncounters = totalWildEncounters,
+                totalTrainerEncounters = totalTrainerEncounters,
+                isFirstEncounter = isFirstEncounter
             }
         }))
 
-        Config.log("info", string.format("Encounter: %s on %s (count: %d, first: %s)",
+        Config.log("info", string.format("Encounter: %s on %s (wild: %d, trainer: %d, first: %s)",
             PokemonData.Pokemon[pokemonID] and PokemonData.Pokemon[pokemonID].name or "Unknown",
             routeInfo and routeInfo.name or "Unknown",
-            state.encountersByRoute[mapId][pokemonID],
-            isFirstOnRoute and "yes" or "no"))
+            totalWildEncounters,
+            totalTrainerEncounters,
+            isFirstEncounter and "yes" or "no"))
     end
     
     -- Process battle analytics during combat
@@ -1380,7 +1378,6 @@ local function IronmonConnect()
         state.lastArea = nil
         state.checkpointsNotified = {}
         state.currentCheckpointIndex = 1
-        state.encountersByRoute = {}
         state.lastTeamHash = {}
         state.lastItemSnapshot = {}
 
