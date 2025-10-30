@@ -297,17 +297,15 @@ local function IronmonConnect()
             self.processTeam()
         end
 
-        -- Send initial location
-        if Config.isFeatureEnabled("locationTracking") then
-            self.processLocation()
-        end
-
         -- Initialize item tracking
         if Config.isFeatureEnabled("itemTracking") then
             state.lastItemSnapshot = self.deepCopyItems(TrackerAPI.getBagItems and TrackerAPI.getBagItems() or {})
         end
 
         state.initialized = true
+
+        -- Note: Location detection happens via periodic updates (onProgramUpdateTick)
+        -- to avoid sending mapId=0 before game data is populated
     end
     
     -- Process team changes
@@ -396,8 +394,12 @@ local function IronmonConnect()
     -- Process location changes
     function self.processLocation()
         if not Config.isFeatureEnabled("locationTracking") then return end
-        
+
         local mapId = TrackerAPI.getMapId()
+
+        -- Skip if not in game (mapId = 0 means not in game)
+        if mapId == 0 then return end
+
         if mapId ~= state.lastArea then
             -- Get enhanced route info
             local routeInfo = TrackerAPI.getRouteInfo and TrackerAPI.getRouteInfo(mapId) or RouteData.Info[mapId]
