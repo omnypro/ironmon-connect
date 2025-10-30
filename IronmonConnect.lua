@@ -822,7 +822,7 @@ local function IronmonConnect()
         
         -- Initialize battle state
         state.battleStartFrame = emu.framecount()
-        state.battleTurn = 0
+        state.battleTurn = -1  -- -1 to match Ironmon Tracker's initialization
 
         -- Send enhanced battle start event
         send(createEvent("battle_started", {
@@ -888,7 +888,7 @@ local function IronmonConnect()
         
         -- Reset battle state
         state.battleStartFrame = nil
-        state.battleTurn = 0
+        state.battleTurn = -1
         state.lastBattleOpponent = nil
         state.isWildBattle = false
         state.lastTrainerId = nil
@@ -905,7 +905,7 @@ local function IronmonConnect()
     function self.afterBattleDataUpdate()
         if not Config.isFeatureEnabled("battleEvents") then return end
 
-        -- Track battle moves and damage (check every 10 frames to reduce overhead)
+        -- Track battle moves and damage (check every 10 frames like Ironmon Tracker)
         if Config.isFeatureEnabled("battleAnalytics") and state.frameCounter % 10 == 0 then
             self.processBattleAnalytics()
         end
@@ -1023,78 +1023,86 @@ local function IronmonConnect()
     -- Process battle analytics during combat
     function self.processBattleAnalytics()
         if not Battle or not Battle.inActiveBattle then return end
-        
-        -- Get active Pokemon
-        local playerMon = TrackerAPI.getPlayerPokemon(Battle.Combatants and Battle.Combatants.LeftOwn or 1)
-        local enemyMon = Tracker.getPokemon(Battle.Combatants and Battle.Combatants.LeftOther or 1, false)
-        
-        if not playerMon or not enemyMon then return end
-        
-        -- Check for HP changes (damage dealt/received)
-        local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
-        local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
 
-        local playerPrevHP = state[playerHPKey] or (playerMon.curHP or 0)
-        local enemyPrevHP = state[enemyHPKey] or (enemyMon.hp or 0)
+        -- Use Ironmon Tracker's turn count (they already track this for us)
+        local currentTurn = Battle.turnCount
 
-        local playerDamage = playerPrevHP - (playerMon.curHP or 0)
-        local enemyDamage = enemyPrevHP - (enemyMon.hp or 0)
-        
-        -- Send damage event if significant damage occurred
-        if playerDamage > 0 or enemyDamage > 0 then
-            -- Calculate move effectiveness if damage was dealt
-            local playerEffectiveness = nil
-            local enemyEffectiveness = nil
-            
-            if Config.isFeatureEnabled("moveTracking") and enemyDamage > 0 then
-                -- Player attacked enemy - calculate effectiveness
-                playerEffectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
+        -- Check if this is a new turn
+        if currentTurn ~= state.battleTurn then
+            state.battleTurn = currentTurn
+
+            -- Get active Pokemon
+            local playerMon = TrackerAPI.getPlayerPokemon(Battle.Combatants and Battle.Combatants.LeftOwn or 1)
+            local enemyMon = Tracker.getPokemon(Battle.Combatants and Battle.Combatants.LeftOther or 1, false)
+
+            if not playerMon or not enemyMon then return end
+
+            -- Check for HP changes (damage dealt/received)
+            local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
+            local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
+
+            local playerPrevHP = state[playerHPKey] or (playerMon.curHP or 0)
+            local enemyPrevHP = state[enemyHPKey] or (enemyMon.hp or 0)
+
+            local playerDamage = playerPrevHP - (playerMon.curHP or 0)
+            local enemyDamage = enemyPrevHP - (enemyMon.hp or 0)
+
+            -- Update HP tracking
+            state[playerHPKey] = playerMon.curHP
+            state[enemyHPKey] = enemyMon.hp
+
+            -- Send damage event if significant damage occurred
+            if playerDamage > 0 or enemyDamage > 0 then
+                -- Calculate move effectiveness if damage was dealt
+                local playerEffectiveness = nil
+                local enemyEffectiveness = nil
+
+                if Config.isFeatureEnabled("moveTracking") and enemyDamage > 0 then
+                    -- Player attacked enemy - calculate effectiveness
+                    playerEffectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
+                end
+
+                if Config.isFeatureEnabled("moveTracking") and playerDamage > 0 then
+                    -- Enemy attacked player - calculate effectiveness
+                    enemyEffectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
+                end
+
+                send(createEvent("battle_damage", {
+                    turn = currentTurn,
+                    playerDamage = playerDamage > 0 and playerDamage or 0,
+                    enemyDamage = enemyDamage > 0 and enemyDamage or 0,
+                    playerMon = {
+                        id = playerMon.pokemonID,
+                        currentHP = playerMon.curHP,
+                        maxHP = playerMon.stats and playerMon.stats.hp or 0,
+                        level = playerMon.level
+                    },
+                    enemyMon = {
+                        id = enemyMon.pokemonID,
+                        currentHP = enemyMon.hp or 0,
+                        maxHP = enemyMon.hpmax or 0,
+                        level = enemyMon.level
+                    },
+                    effectiveness = {
+                        playerMove = playerEffectiveness,
+                        enemyMove = enemyEffectiveness
+                    }
+                }))
+
+                -- Track move effectiveness patterns
+                if Config.isFeatureEnabled("moveTracking") then
+                    if playerEffectiveness then
+                        self.trackMoveEffectiveness(playerMon, enemyMon, playerEffectiveness, "player")
+                    end
+                    if enemyEffectiveness then
+                        self.trackMoveEffectiveness(enemyMon, playerMon, enemyEffectiveness, "enemy")
+                    end
+                end
             end
-            
-            if Config.isFeatureEnabled("moveTracking") and playerDamage > 0 then
-                -- Enemy attacked player - calculate effectiveness  
-                enemyEffectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
-            end
-            
-            send(createEvent("battle_damage", {
-                turn = state.battleTurn or 0,
-                playerDamage = playerDamage > 0 and playerDamage or 0,
-                enemyDamage = enemyDamage > 0 and enemyDamage or 0,
-                playerMon = {
-                    id = playerMon.pokemonID,
-                    currentHP = playerMon.curHP,
-                    maxHP = playerMon.stats and playerMon.stats.hp or 0,
-                    level = playerMon.level
-                },
-                enemyMon = {
-                    id = enemyMon.pokemonID,
-                    currentHP = enemyMon.hp or 0,
-                    maxHP = enemyMon.hpmax or 0,
-                    level = enemyMon.level
-                },
-                effectiveness = {
-                    playerMove = playerEffectiveness,
-                    enemyMove = enemyEffectiveness
-                }
-            }))
-            
-            state.battleTurn = (state.battleTurn or 0) + 1
-        end
-        
-        -- Update HP tracking
-        state[playerHPKey] = playerMon.curHP
-        state[enemyHPKey] = enemyMon.hp
-        
-        -- Track moves if enabled
-        if Config.isFeatureEnabled("moveTracking") then
-            self.trackBattleMoves(enemyMon)
-            
-            -- Track move effectiveness patterns
-            if playerEffectiveness then
-                self.trackMoveEffectiveness(playerMon, enemyMon, playerEffectiveness, "player")
-            end
-            if enemyEffectiveness then
-                self.trackMoveEffectiveness(enemyMon, playerMon, enemyEffectiveness, "enemy")
+
+            -- Track moves if enabled
+            if Config.isFeatureEnabled("moveTracking") then
+                self.trackBattleMoves(enemyMon)
             end
         end
     end
