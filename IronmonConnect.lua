@@ -664,37 +664,46 @@ local function IronmonConnect()
     -- Hook: Called when battle starts
     function self.afterBattleBegins()
         if not Config.isFeatureEnabled("battleEvents") then return end
-        
+
+        -- Ensure battle data is ready before reading
+        if not Battle or not Battle.inBattleScreen then
+            Config.log("warn", "afterBattleBegins called but battle not ready")
+            return
+        end
+
         -- Get battle information
-        local isWildEncounter = Battle and Battle.isWildEncounter or false
-        local trainerId = Battle and Battle.opposingTrainerId or nil
-        
-        -- Get opponent Pokemon using Battle.getViewedPokemon or Tracker.getPokemon
+        local isWildEncounter = Battle.isWildEncounter or false
+        local trainerId = Battle.opposingTrainerId or nil
+
+        -- Get opponent Pokemon using Tracker.getPokemon
         local opposingPokemon = nil
-        
+
         -- First try to get the enemy Pokemon slot from Battle.Combatants
-        if Battle and Battle.Combatants and Battle.Combatants.LeftOther then
+        if Battle.Combatants and Battle.Combatants.LeftOther then
             opposingPokemon = Tracker.getPokemon(Battle.Combatants.LeftOther, false)
         end
-        
+
         -- If that doesn't work, try slot 1 for enemy team
         if not opposingPokemon then
             opposingPokemon = Tracker.getPokemon(1, false)
         end
-        
-        local opponentData = nil
-        
-        if opposingPokemon and opposingPokemon.pokemonID and opposingPokemon.pokemonID > 0 then
-            opponentData = {
-                id = opposingPokemon.pokemonID,
-                name = opposingPokemon.name or (PokemonData.Pokemon[opposingPokemon.pokemonID] and PokemonData.Pokemon[opposingPokemon.pokemonID].name) or "Unknown",
-                level = opposingPokemon.level or 0,
-                hp = {
-                    current = opposingPokemon.hp or 0,
-                    max = opposingPokemon.hpmax or 0
-                }
-            }
+
+        -- If still no opponent data, log and return (battle data not ready yet)
+        if not opposingPokemon or not opposingPokemon.pokemonID or opposingPokemon.pokemonID == 0 then
+            Config.log("warn", "afterBattleBegins: opponent data not ready")
+            return
         end
+
+        -- Build opponent data (we've verified it exists)
+        local opponentData = {
+            id = opposingPokemon.pokemonID,
+            name = opposingPokemon.name or (PokemonData.Pokemon[opposingPokemon.pokemonID] and PokemonData.Pokemon[opposingPokemon.pokemonID].name) or "Unknown",
+            level = opposingPokemon.level or 0,
+            hp = {
+                current = opposingPokemon.hp or 0,
+                max = opposingPokemon.hpmax or 0
+            }
+        }
         
         -- Store battle opponent for encounter tracking
         if isWildEncounter and opponentData then
@@ -776,7 +785,7 @@ local function IronmonConnect()
         
         -- Initialize battle state
         state.battleStartFrame = emu.framecount()
-        state.battleTurn = -1  -- -1 to match Ironmon Tracker's initialization
+        state.lastBattleTurn = -1  -- -1 to match Ironmon Tracker's initialization
 
         -- Initialize HP tracking for battle analytics
         if Config.isFeatureEnabled("battleAnalytics") then
@@ -853,7 +862,7 @@ local function IronmonConnect()
         
         -- Reset battle state
         state.battleStartFrame = nil
-        state.battleTurn = -1
+        state.lastBattleTurn = -1
         state.lastBattleOpponent = nil
         state.isWildBattle = false
         state.lastTrainerId = nil
@@ -1043,145 +1052,145 @@ local function IronmonConnect()
     function self.processBattleAnalytics()
         if not Battle or not Battle.inActiveBattle() then return end
 
-        -- Use Ironmon Tracker's turn count (they already track this for us)
+        -- Track turn changes reliably by comparing turn counts
+        -- (Battle.isNewTurn can be reset before we check it due to timing)
         local currentTurn = Battle.turnCount
+        if not state.lastBattleTurn then state.lastBattleTurn = -1 end
 
-        -- Check if this is a new turn
-        if currentTurn ~= state.battleTurn then
-            state.battleTurn = currentTurn
+        if currentTurn == state.lastBattleTurn then return end
+        state.lastBattleTurn = currentTurn
 
-            -- Get active Pokemon
-            local playerMon = TrackerAPI.getPlayerPokemon(Battle.Combatants and Battle.Combatants.LeftOwn or 1)
-            local enemyMon = Tracker.getPokemon(Battle.Combatants and Battle.Combatants.LeftOther or 1, false)
+        -- Get active Pokemon
+        local playerMon = TrackerAPI.getPlayerPokemon(Battle.Combatants and Battle.Combatants.LeftOwn or 1)
+        local enemyMon = Tracker.getPokemon(Battle.Combatants and Battle.Combatants.LeftOther or 1, false)
 
-            if not playerMon or not enemyMon then return end
+        if not playerMon or not enemyMon then return end
 
-            -- Determine who attacked this turn (Battle.attacker: 0/2 = player, 1/3 = enemy)
-            local attacker = Battle.attacker or 0
-            local playerAttacked = (attacker == 0 or attacker == 2)
-            local enemyAttacked = (attacker == 1 or attacker == 3)
+        -- Determine who attacked this turn (Battle.attacker: 0/2 = player, 1/3 = enemy)
+        local attacker = Battle.attacker or 0
+        local playerAttacked = (attacker == 0 or attacker == 2)
+        local enemyAttacked = (attacker == 1 or attacker == 3)
 
-            -- Check for HP changes (damage dealt/received)
-            local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
-            local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
+        -- Check for HP changes (damage dealt/received)
+        local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
+        local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
 
-            local playerPrevHP = state[playerHPKey] or (playerMon.curHP or 0)
-            local enemyPrevHP = state[enemyHPKey] or (enemyMon.hp or 0)
+        local playerPrevHP = state[playerHPKey] or (playerMon.curHP or 0)
+        local enemyPrevHP = state[enemyHPKey] or (enemyMon.hp or 0)
 
-            local playerDamage = playerPrevHP - (playerMon.curHP or 0)
-            local enemyDamage = enemyPrevHP - (enemyMon.hp or 0)
+        local playerDamage = playerPrevHP - (playerMon.curHP or 0)
+        local enemyDamage = enemyPrevHP - (enemyMon.hp or 0)
 
-            -- Update HP tracking
-            state[playerHPKey] = playerMon.curHP
-            state[enemyHPKey] = enemyMon.hp
+        -- Update HP tracking
+        state[playerHPKey] = playerMon.curHP
+        state[enemyHPKey] = enemyMon.hp
 
-            -- Send battle_action event for detailed play-by-play
-            if currentTurn > 0 then  -- Skip turn 0 (battle start)
-                local actionData = {
-                    turn = currentTurn,
-                    attacker = playerAttacked and "player" or "enemy",
-                    damageDealt = playerAttacked and enemyDamage or playerDamage,
-                    playerMon = {
-                        id = playerMon.pokemonID,
-                        name = PokemonData.Pokemon[playerMon.pokemonID] and PokemonData.Pokemon[playerMon.pokemonID].name or "Unknown",
-                        hp = playerMon.curHP,
-                        maxHP = playerMon.stats and playerMon.stats.hp or 0,
-                        level = playerMon.level,
-                        status = playerMon.status or 0
-                    },
-                    enemyMon = {
-                        id = enemyMon.pokemonID,
-                        name = PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Unknown",
-                        hp = enemyMon.hp or 0,
-                        maxHP = enemyMon.hpmax or 0,
-                        level = enemyMon.level,
-                        status = enemyMon.status or 0
-                    }
+        -- Send battle_action event for detailed play-by-play
+        if currentTurn > 0 then  -- Skip turn 0 (battle start)
+            local actionData = {
+                turn = currentTurn,
+                attacker = playerAttacked and "player" or "enemy",
+                damageDealt = playerAttacked and enemyDamage or playerDamage,
+                playerMon = {
+                    id = playerMon.pokemonID,
+                    name = PokemonData.Pokemon[playerMon.pokemonID] and PokemonData.Pokemon[playerMon.pokemonID].name or "Unknown",
+                    hp = playerMon.curHP,
+                    maxHP = playerMon.stats and playerMon.stats.hp or 0,
+                    level = playerMon.level,
+                    status = playerMon.status or 0
+                },
+                enemyMon = {
+                    id = enemyMon.pokemonID,
+                    name = PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Unknown",
+                    hp = enemyMon.hp or 0,
+                    maxHP = enemyMon.hpmax or 0,
+                    level = enemyMon.level,
+                    status = enemyMon.status or 0
                 }
+            }
 
-                -- Add move effectiveness if damage was dealt
-                if playerAttacked and enemyDamage > 0 then
-                    local effectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
-                    if effectiveness then
-                        actionData.move = {
-                            id = effectiveness.moveId,
-                            name = effectiveness.moveName,
-                            type = effectiveness.moveType,
-                            power = effectiveness.movePower,
-                            effectiveness = effectiveness.effectiveness,
-                            stab = effectiveness.stab
-                        }
-                    end
-                elseif enemyAttacked and playerDamage > 0 then
-                    local effectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
-                    if effectiveness then
-                        actionData.move = {
-                            id = effectiveness.moveId,
-                            name = effectiveness.moveName,
-                            type = effectiveness.moveType,
-                            power = effectiveness.movePower,
-                            effectiveness = effectiveness.effectiveness,
-                            stab = effectiveness.stab
-                        }
-                    end
-                end
-
-                send(createEvent("battle_action", actionData))
-            end
-
-            -- Send damage event if significant damage occurred
-            if playerDamage > 0 or enemyDamage > 0 then
-                -- Calculate move effectiveness if damage was dealt
-                local playerEffectiveness = nil
-                local enemyEffectiveness = nil
-
-                if Config.isFeatureEnabled("moveTracking") and enemyDamage > 0 then
-                    -- Player attacked enemy - calculate effectiveness
-                    playerEffectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
-                end
-
-                if Config.isFeatureEnabled("moveTracking") and playerDamage > 0 then
-                    -- Enemy attacked player - calculate effectiveness
-                    enemyEffectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
-                end
-
-                send(createEvent("battle_damage", {
-                    turn = currentTurn,
-                    playerDamage = playerDamage > 0 and playerDamage or 0,
-                    enemyDamage = enemyDamage > 0 and enemyDamage or 0,
-                    playerMon = {
-                        id = playerMon.pokemonID,
-                        currentHP = playerMon.curHP,
-                        maxHP = playerMon.stats and playerMon.stats.hp or 0,
-                        level = playerMon.level
-                    },
-                    enemyMon = {
-                        id = enemyMon.pokemonID,
-                        currentHP = enemyMon.hp or 0,
-                        maxHP = enemyMon.hpmax or 0,
-                        level = enemyMon.level
-                    },
-                    effectiveness = {
-                        playerMove = playerEffectiveness,
-                        enemyMove = enemyEffectiveness
+            -- Add move effectiveness if damage was dealt
+            if playerAttacked and enemyDamage > 0 then
+                local effectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
+                if effectiveness then
+                    actionData.move = {
+                        id = effectiveness.moveId,
+                        name = effectiveness.moveName,
+                        type = effectiveness.moveType,
+                        power = effectiveness.movePower,
+                        effectiveness = effectiveness.effectiveness,
+                        stab = effectiveness.stab
                     }
-                }))
-
-                -- Track move effectiveness patterns
-                if Config.isFeatureEnabled("moveTracking") then
-                    if playerEffectiveness then
-                        self.trackMoveEffectiveness(playerMon, enemyMon, playerEffectiveness, "player")
-                    end
-                    if enemyEffectiveness then
-                        self.trackMoveEffectiveness(enemyMon, playerMon, enemyEffectiveness, "enemy")
-                    end
+                end
+            elseif enemyAttacked and playerDamage > 0 then
+                local effectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
+                if effectiveness then
+                    actionData.move = {
+                        id = effectiveness.moveId,
+                        name = effectiveness.moveName,
+                        type = effectiveness.moveType,
+                        power = effectiveness.movePower,
+                        effectiveness = effectiveness.effectiveness,
+                        stab = effectiveness.stab
+                    }
                 end
             end
 
-            -- Track moves if enabled
-            if Config.isFeatureEnabled("moveTracking") then
-                self.trackBattleMoves(enemyMon)
+            send(createEvent("battle_action", actionData))
+        end
+
+        -- Send damage event if significant damage occurred
+        if playerDamage > 0 or enemyDamage > 0 then
+            -- Calculate move effectiveness if damage was dealt
+            local playerEffectiveness = nil
+            local enemyEffectiveness = nil
+
+            if Config.isFeatureEnabled("moveTracking") and enemyDamage > 0 then
+                -- Player attacked enemy - calculate effectiveness
+                playerEffectiveness = self.calculateMoveEffectiveness(playerMon, enemyMon)
             end
+
+            if Config.isFeatureEnabled("moveTracking") and playerDamage > 0 then
+                -- Enemy attacked player - calculate effectiveness
+                enemyEffectiveness = self.calculateMoveEffectiveness(enemyMon, playerMon)
+            end
+
+            send(createEvent("battle_damage", {
+                turn = currentTurn,
+                playerDamage = playerDamage > 0 and playerDamage or 0,
+                enemyDamage = enemyDamage > 0 and enemyDamage or 0,
+                playerMon = {
+                    id = playerMon.pokemonID,
+                    currentHP = playerMon.curHP,
+                    maxHP = playerMon.stats and playerMon.stats.hp or 0,
+                    level = playerMon.level
+                },
+                enemyMon = {
+                    id = enemyMon.pokemonID,
+                    currentHP = enemyMon.hp or 0,
+                    maxHP = enemyMon.hpmax or 0,
+                    level = enemyMon.level
+                },
+                effectiveness = {
+                    playerMove = playerEffectiveness,
+                    enemyMove = enemyEffectiveness
+                }
+            }))
+
+            -- Track move effectiveness patterns
+            if Config.isFeatureEnabled("moveTracking") then
+                if playerEffectiveness then
+                    self.trackMoveEffectiveness(playerMon, enemyMon, playerEffectiveness, "player")
+                end
+                if enemyEffectiveness then
+                    self.trackMoveEffectiveness(enemyMon, playerMon, enemyEffectiveness, "enemy")
+                end
+            end
+        end
+
+        -- Track moves if enabled
+        if Config.isFeatureEnabled("moveTracking") then
+            self.trackBattleMoves(enemyMon)
         end
     end
     
