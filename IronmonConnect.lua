@@ -289,6 +289,8 @@ local function IronmonConnect()
                 local hash = Utils.hashPokemonState(pokemon)
                 if hash ~= state.lastTeamHash[slot] then
                     -- Team change detected!
+                    local pokemonName = PokemonData.Pokemon[pokemon.pokemonID] and PokemonData.Pokemon[pokemon.pokemonID].name or "Unknown"
+                    Config.log("info", string.format("Team slot %d updated: %s (Lv%d)", slot, pokemonName, pokemon.level))
                     self.sendTeamUpdate(slot, pokemon)
                     state.lastTeamHash[slot] = hash
                 end
@@ -592,13 +594,15 @@ local function IronmonConnect()
             end
             
             if index and not state.checkpointsNotified[checkpointName] then
+                Config.log("info", string.format("Checkpoint reached: %s (%d/%d)", checkpointName, index, #Checkpoints))
+
                 send(createEvent("checkpoint", {
                     name = checkpointName,
                     index = index,
                     total = #Checkpoints,
                     seed = state.lastSeed
                 }))
-                
+
                 state.checkpointsNotified[checkpointName] = true
                 state.currentCheckpointIndex = index + 1
             end
@@ -1261,6 +1265,10 @@ local function IronmonConnect()
     function self.determineSplitChange()
         local defeatedTrainers = Program.getDefeatedTrainersByLocation()
         local currentTrainers = {}
+
+        if Config.get("debug") then
+            Config.log("debug", string.format("Checking %d defeated trainers", defeatedTrainers and #defeatedTrainers or 0))
+        end
         
         for _, trainer in pairs(defeatedTrainers) do
             local lookup = TrainerData.getTrainerInfo(trainer)
@@ -1308,6 +1316,9 @@ local function IronmonConnect()
         
         -- Check trainer class names first (for special cases)
         for trainerName, checkpointName in pairs(CLASS_NAME_CHECKPOINTS) do
+            if Config.get("debug") and currentTrainers[trainerName] then
+                Config.log("debug", string.format("Found trainer class: %s", trainerName))
+            end
             if currentTrainers[trainerName] and not state.checkpointsNotified[checkpointName] then
                 return checkpointName
             end
