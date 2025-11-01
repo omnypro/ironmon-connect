@@ -283,7 +283,8 @@ local function IronmonConnect()
         local moveHash = ""
         if pokemon.moves then
             for i = 1, 4 do
-                moveHash = moveHash .. (pokemon.moves[i] or 0) .. ","
+                -- pokemon.moves[i] is a table with { id, level, pp }, not just a number
+                moveHash = moveHash .. (pokemon.moves[i] and pokemon.moves[i].id or 0) .. ","
             end
         end
 
@@ -837,6 +838,41 @@ local function IronmonConnect()
             outcomeStr = "Defeat"
         end
 
+        -- Send final battle_action event (the move that ended the battle)
+        if Config.isFeatureEnabled("battleAnalytics") and Battle and state.lastBattleTurn and state.lastBattleTurn >= 1 then
+            local attacker = Battle.attacker or 0
+            local playerAttacked = (attacker == 0 or attacker == 2)
+
+            -- Read the move that ended the battle
+            local moveId = playerAttacked and self.readPlayerMoveId(attacker) or Battle.lastEnemyMoveId or 0
+
+            -- Get Pokemon states
+            local playerMon = Tracker.getPokemon(1, true)
+            local enemyMon = Tracker.getPokemon(1, false)
+
+            local formattedPlayerMon = self.formatPokemonData(playerMon, true)
+            local formattedEnemyMon = self.formatPokemonData(enemyMon, false)
+
+            if moveId > 0 and formattedPlayerMon and formattedEnemyMon then
+                local defenderTypes = { PokemonData.Pokemon[enemyMon.pokemonID].type1, PokemonData.Pokemon[enemyMon.pokemonID].type2 }
+                local attackerPokemonId = playerAttacked and playerMon.pokemonID or enemyMon.pokemonID
+                local formattedMove = self.formatMoveData(moveId, attackerPokemonId, defenderTypes)
+
+                if formattedMove then
+                    local finalActionData = {
+                        turn = state.lastBattleTurn,
+                        attacker = playerAttacked and "player" or "enemy",
+                        damageDealt = playerAttacked and (state["enemy_hp_turn_" .. state.lastBattleTurn] or 0) - (enemyMon.curHP or enemyMon.hp or 0) or (state["player_hp_turn_" .. state.lastBattleTurn] or 0) - playerMon.curHP,
+                        playerMon = formattedPlayerMon,
+                        enemyMon = formattedEnemyMon,
+                        move = formattedMove
+                    }
+
+                    send(createEvent("battle_action", finalActionData))
+                end
+            end
+        end
+
         -- Send battle end event
         send(createEvent("battle_ended", {
             outcome = outcomeStr,
@@ -1078,18 +1114,8 @@ local function IronmonConnect()
         local enemyAttacked = (attacker == 1 or attacker == 3)
 
         -- Get the actual move IDs that were used this turn
-        -- Memory layout: offsetBattleResultsLastAttackerMove + (attacker % 2) * sizeofLastAttackerMove
-        local playerMoveId = 0
-        local enemyMoveId = 0
-
-        if playerAttacked then
-            local attackerIndex = (attacker % 2) * Program.Addresses.sizeofLastAttackerMove
-            playerMoveId = Memory.readword(GameSettings.gBattleResults + Program.Addresses.offsetBattleResultsLastAttackerMove + attackerIndex)
-        end
-
-        if enemyAttacked then
-            enemyMoveId = Battle.lastEnemyMoveId or 0
-        end
+        local playerMoveId = playerAttacked and self.readPlayerMoveId(attacker) or 0
+        local enemyMoveId = enemyAttacked and Battle.lastEnemyMoveId or 0
 
         -- Check for HP changes (damage dealt/received)
         local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
@@ -1110,57 +1136,17 @@ local function IronmonConnect()
             turn = completedTurn,
             attacker = playerAttacked and "player" or "enemy",
             damageDealt = playerAttacked and enemyDamage or playerDamage,
-            playerMon = {
-                id = playerMon.pokemonID,
-                name = PokemonData.Pokemon[playerMon.pokemonID] and PokemonData.Pokemon[playerMon.pokemonID].name or "Unknown",
-                hp = playerMon.curHP,
-                maxHP = playerMon.stats and playerMon.stats.hp or 0,
-                level = playerMon.level,
-                status = playerMon.status or 0
-            },
-            enemyMon = {
-                id = enemyMon.pokemonID,
-                name = PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Unknown",
-                hp = enemyMon.hp or 0,
-                maxHP = enemyMon.hpmax or 0,
-                level = enemyMon.level,
-                status = enemyMon.status or 0
-            }
+            playerMon = self.formatPokemonData(playerMon, true),
+            enemyMon = self.formatPokemonData(enemyMon, false)
         }
 
         -- Add move details if damage was dealt
         if playerAttacked and enemyDamage > 0 and playerMoveId > 0 then
-            local moveData = MoveData.Moves[playerMoveId]
-            if moveData then
-                local defenderTypes = { PokemonData.Pokemon[enemyMon.pokemonID].type1, PokemonData.Pokemon[enemyMon.pokemonID].type2 }
-                local effectiveness = self.getTypeEffectiveness(moveData.type, defenderTypes)
-                local hasSTAB = self.hasSTAB(playerMon.pokemonID, moveData.type)
-
-                actionData.move = {
-                    id = playerMoveId,
-                    name = moveData.name or "Unknown",
-                    type = moveData.type or "Unknown",
-                    power = moveData.power or 0,
-                    effectiveness = effectiveness,
-                    stab = hasSTAB
-                }
-            end
+            local defenderTypes = { PokemonData.Pokemon[enemyMon.pokemonID].type1, PokemonData.Pokemon[enemyMon.pokemonID].type2 }
+            actionData.move = self.formatMoveData(playerMoveId, playerMon.pokemonID, defenderTypes)
         elseif enemyAttacked and playerDamage > 0 and enemyMoveId > 0 then
-            local moveData = MoveData.Moves[enemyMoveId]
-            if moveData then
-                local defenderTypes = { PokemonData.Pokemon[playerMon.pokemonID].type1, PokemonData.Pokemon[playerMon.pokemonID].type2 }
-                local effectiveness = self.getTypeEffectiveness(moveData.type, defenderTypes)
-                local hasSTAB = self.hasSTAB(enemyMon.pokemonID, moveData.type)
-
-                actionData.move = {
-                    id = enemyMoveId,
-                    name = moveData.name or "Unknown",
-                    type = moveData.type or "Unknown",
-                    power = moveData.power or 0,
-                    effectiveness = effectiveness,
-                    stab = hasSTAB
-                }
-            end
+            local defenderTypes = { PokemonData.Pokemon[playerMon.pokemonID].type1, PokemonData.Pokemon[playerMon.pokemonID].type2 }
+            actionData.move = self.formatMoveData(enemyMoveId, enemyMon.pokemonID, defenderTypes)
         end
 
         send(createEvent("battle_action", actionData))
@@ -1172,52 +1158,49 @@ local function IronmonConnect()
             local enemyEffectiveness = nil
 
             if Config.isFeatureEnabled("moveTracking") and enemyDamage > 0 and playerMoveId > 0 then
-                local moveData = MoveData.Moves[playerMoveId]
-                if moveData then
-                    local defenderTypes = { PokemonData.Pokemon[enemyMon.pokemonID].type1, PokemonData.Pokemon[enemyMon.pokemonID].type2 }
-                    local effectiveness = self.getTypeEffectiveness(moveData.type, defenderTypes)
-                    local hasSTAB = self.hasSTAB(playerMon.pokemonID, moveData.type)
+                local formattedMove = self.formatMoveData(playerMoveId, playerMon.pokemonID, { PokemonData.Pokemon[enemyMon.pokemonID].type1, PokemonData.Pokemon[enemyMon.pokemonID].type2 })
+                if formattedMove then
                     playerEffectiveness = {
-                        moveId = playerMoveId,
-                        moveName = moveData.name,
-                        moveType = moveData.type,
-                        effectiveness = effectiveness,
-                        stab = hasSTAB
+                        moveId = formattedMove.id,
+                        moveName = formattedMove.name,
+                        moveType = formattedMove.type,
+                        effectiveness = formattedMove.effectiveness,
+                        stab = formattedMove.stab
                     }
                 end
             end
 
             if Config.isFeatureEnabled("moveTracking") and playerDamage > 0 and enemyMoveId > 0 then
-                local moveData = MoveData.Moves[enemyMoveId]
-                if moveData then
-                    local defenderTypes = { PokemonData.Pokemon[playerMon.pokemonID].type1, PokemonData.Pokemon[playerMon.pokemonID].type2 }
-                    local effectiveness = self.getTypeEffectiveness(moveData.type, defenderTypes)
-                    local hasSTAB = self.hasSTAB(enemyMon.pokemonID, moveData.type)
+                local formattedMove = self.formatMoveData(enemyMoveId, enemyMon.pokemonID, { PokemonData.Pokemon[playerMon.pokemonID].type1, PokemonData.Pokemon[playerMon.pokemonID].type2 })
+                if formattedMove then
                     enemyEffectiveness = {
-                        moveId = enemyMoveId,
-                        moveName = moveData.name,
-                        moveType = moveData.type,
-                        effectiveness = effectiveness,
-                        stab = hasSTAB
+                        moveId = formattedMove.id,
+                        moveName = formattedMove.name,
+                        moveType = formattedMove.type,
+                        effectiveness = formattedMove.effectiveness,
+                        stab = formattedMove.stab
                     }
                 end
             end
+
+            local formattedPlayerMon = self.formatPokemonData(playerMon, true)
+            local formattedEnemyMon = self.formatPokemonData(enemyMon, false)
 
             send(createEvent("battle_damage", {
                 turn = completedTurn,
                 playerDamage = playerDamage > 0 and playerDamage or 0,
                 enemyDamage = enemyDamage > 0 and enemyDamage or 0,
                 playerMon = {
-                    id = playerMon.pokemonID,
-                    currentHP = playerMon.curHP,
-                    maxHP = playerMon.stats and playerMon.stats.hp or 0,
-                    level = playerMon.level
+                    id = formattedPlayerMon.id,
+                    currentHP = formattedPlayerMon.hp,
+                    maxHP = formattedPlayerMon.maxHP,
+                    level = formattedPlayerMon.level
                 },
                 enemyMon = {
-                    id = enemyMon.pokemonID,
-                    currentHP = enemyMon.hp or 0,
-                    maxHP = enemyMon.hpmax or 0,
-                    level = enemyMon.level
+                    id = formattedEnemyMon.id,
+                    currentHP = formattedEnemyMon.hp,
+                    maxHP = formattedEnemyMon.maxHP,
+                    level = formattedEnemyMon.level
                 },
                 effectiveness = {
                     playerMove = playerEffectiveness,
@@ -1419,22 +1402,73 @@ local function IronmonConnect()
         if not MoveData or not MoveData.TypeToEffectiveness then
             return 1.0  -- Default to neutral if no data
         end
-        
+
         local total = 1.0
-        
+
         -- Check effectiveness against first type
         if MoveData.TypeToEffectiveness[moveType] and MoveData.TypeToEffectiveness[moveType][defenderTypes[1]] then
             total = total * MoveData.TypeToEffectiveness[moveType][defenderTypes[1]]
         end
-        
+
         -- Check effectiveness against second type if different
         if defenderTypes[2] and defenderTypes[2] ~= defenderTypes[1] then
             if MoveData.TypeToEffectiveness[moveType] and MoveData.TypeToEffectiveness[moveType][defenderTypes[2]] then
                 total = total * MoveData.TypeToEffectiveness[moveType][defenderTypes[2]]
             end
         end
-        
+
         return total
+    end
+
+    -- Helper: Format Pokemon data for events
+    -- Handles differences between player Pokemon (curHP/stats.hp) and enemy Pokemon (hp/hpmax)
+    function self.formatPokemonData(pokemon, isOwn)
+        if not pokemon or not pokemon.pokemonID or pokemon.pokemonID == 0 then
+            return nil
+        end
+
+        return {
+            id = pokemon.pokemonID,
+            name = PokemonData.Pokemon[pokemon.pokemonID] and PokemonData.Pokemon[pokemon.pokemonID].name or "Unknown",
+            hp = isOwn and pokemon.curHP or pokemon.hp or 0,
+            maxHP = isOwn and (pokemon.stats and pokemon.stats.hp or 0) or pokemon.hpmax or 0,
+            level = pokemon.level or 0,
+            status = pokemon.status or 0
+        }
+    end
+
+    -- Helper: Format move data with effectiveness and STAB
+    function self.formatMoveData(moveId, attackerPokemonId, defenderTypes)
+        if not moveId or moveId == 0 then
+            return nil
+        end
+
+        local moveData = MoveData.Moves[moveId]
+        if not moveData then
+            return nil
+        end
+
+        local effectiveness = self.getTypeEffectiveness(moveData.type, defenderTypes)
+        local hasSTAB = self.hasSTAB(attackerPokemonId, moveData.type)
+
+        return {
+            id = moveId,
+            name = moveData.name or "Unknown",
+            type = moveData.type or "Unknown",
+            power = moveData.power or 0,
+            effectiveness = effectiveness,
+            stab = hasSTAB
+        }
+    end
+
+    -- Helper: Read player move ID from memory
+    function self.readPlayerMoveId(attacker)
+        if not Program or not Program.Addresses then
+            return 0
+        end
+
+        local attackerIndex = (attacker % 2) * Program.Addresses.sizeofLastAttackerMove
+        return Memory.readword(GameSettings.gBattleResults + Program.Addresses.offsetBattleResultsLastAttackerMove + attackerIndex)
     end
     
     -- Check if a Pokemon gets STAB for a move type
