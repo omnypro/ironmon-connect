@@ -8,14 +8,9 @@ local function IronmonConnect()
     self.github = "omnypro/ironmon-connect"
     self.url = string.format("https://github.com/%s", self.github or "")
     
-    -- ===========================================
-    -- CONFIG MODULE (embedded)
-    -- ===========================================
     local Config = {}
-    
-    -- Default configuration values
+
     Config.defaults = {
-        -- Feature toggles
         runTracking = true,
         battleEvents = true,
         checkpoints = true,
@@ -25,41 +20,29 @@ local function IronmonConnect()
         battleAnalytics = true,
         moveTracking = true,
         itemTracking = true,
-        
-        -- Debug settings
-        debug = true,  -- Enable debug by default for v2.2
-        logLevel = "debug" -- "debug", "info", "warn", "error"
+        debug = false,
+        logLevel = "info"
     }
-    
-    -- Current configuration (will be populated from saved settings)
+
     Config.current = {}
-    
-    -- Initialize configuration from saved settings
+
     function Config.initialize()
-        -- Copy defaults first
         for key, value in pairs(Config.defaults) do
             Config.current[key] = value
         end
-        
-        -- Load saved settings from TrackerAPI
         Config.load()
-        
-        -- Validate loaded settings
         Config.validate()
     end
-    
-    -- Load settings from TrackerAPI
+
     function Config.load()
         if not TrackerAPI then
             console.log("> IMC: Warning: TrackerAPI not available, using defaults")
             return
         end
-        
-        -- Load each setting
+
         for key, defaultValue in pairs(Config.defaults) do
             local saved = TrackerAPI.getExtensionSetting("IronmonConnect", key)
             if saved ~= nil then
-                -- Handle type conversion
                 if type(defaultValue) == "boolean" then
                     Config.current[key] = saved == true or saved == "true" or saved == 1
                 elseif type(defaultValue) == "number" then
@@ -74,8 +57,7 @@ local function IronmonConnect()
             console.log("> IMC: Configuration loaded successfully")
         end
     end
-    
-    -- Save a setting
+
     function Config.set(key, value)
         if Config.defaults[key] == nil then
             console.log("> IMC: Warning: Unknown setting key: " .. tostring(key))
@@ -90,23 +72,18 @@ local function IronmonConnect()
         
         return true
     end
-    
-    -- Get a setting value
+
     function Config.get(key)
         return Config.current[key] or Config.defaults[key]
     end
-    
-    -- Validate configuration values
+
     function Config.validate()
-        -- Currently no validation needed
     end
-    
-    -- Check if a feature is enabled
+
     function Config.isFeatureEnabled(feature)
         return Config.current[feature] == true
     end
-    
-    -- Logging helper
+
     function Config.log(level, message)
         local levels = { debug = 1, info = 2, warn = 3, error = 4 }
         local currentLevel = levels[Config.current.logLevel] or 2
@@ -116,12 +93,7 @@ local function IronmonConnect()
             console.log(string.format("> IMC: [%s] %s", level:upper(), message))
         end
     end
-    
-    -- ===========================================
-    -- MAIN IRONMONCONNECT LOGIC
-    -- ===========================================
-    
-    -- Internal state
+
     local state = {
         initialized = false,
         frameCounter = 0,
@@ -129,13 +101,12 @@ local function IronmonConnect()
         lastArea = nil,
         checkpointsNotified = {},
         currentCheckpointIndex = 1,
-        wasConnected = false,  -- Track connection state changes
-        lastTeamHash = {},  -- Track team changes per slot
-        battleStartFrame = nil,  -- Track battle duration
-        lastItemSnapshot = {}  -- Track item quantities
+        wasConnected = false,
+        lastTeamHash = {},
+        battleStartFrame = nil,
+        lastItemSnapshot = {}
     }
-    
-    -- FRLG checkpoint definitions
+
     local Checkpoints = {
         "RIVAL1", "FIRSTTRAINER", "RIVAL2", "BROCK", "RIVAL3", "RIVAL4",
         "MISTY", "SURGE", "RIVAL5", "ROCKETHIDEOUT", "ERIKA", "KOGA",
@@ -143,33 +114,28 @@ local function IronmonConnect()
         "LORELAI", "BRUNO", "AGATHA", "LANCE", "CHAMP"
     }
 
-    -- Trainer ID to checkpoint mapping (verified from TrainerData.lua)
     local TRAINER_ID_CHECKPOINTS = {
-        -- Rival battles (verified from TrainerData.lua lines 764-788)
+        -- Rival battles
         RIVAL1 = {326, 327, 328},  -- Oak's Lab
-        FIRSTTRAINER = {102, 115},  -- Viridian Forest first Bug Catcher (any in range)
-        RIVAL2 = {329, 330, 331},  -- Route 22 (pre-Viridian Forest)
+        FIRSTTRAINER = {102, 115},  -- Viridian Forest
+        RIVAL2 = {329, 330, 331},  -- Route 22 (pre-Brock)
         RIVAL3 = {332, 333, 334},  -- Cerulean City
         RIVAL4 = {426, 427, 428},  -- S.S. Anne
         RIVAL5 = {429, 430, 431},  -- Pokemon Tower
         RIVAL6 = {432, 433, 434},  -- Silph Co
         RIVAL7 = {435, 436, 437},  -- Route 22 (pre-Victory Road)
-
         -- Giovanni battles
-        ROCKETHIDEOUT = {348},  -- Rocket Hideout
-        SILPHCO = {349},        -- Silph Co.
-
+        ROCKETHIDEOUT = {348},
+        SILPHCO = {349},
         -- Elite Four
         LORELAI = {410},
         BRUNO = {411},
         AGATHA = {412},
         LANCE = {413},
-
         -- Champion
         CHAMP = {438, 439, 440}
     }
-    
-    -- Helper function to create events with timestamps
+
     local function createEvent(eventType, eventData)
         return {
             type = eventType,
@@ -178,10 +144,8 @@ local function IronmonConnect()
             frame = emu and emu.framecount and emu.framecount() or 0
         }
     end
-    
-    -- Enhanced send function with connection checking
+
     local function send(data)
-        -- Check if connected before sending
         if not comm.socketServerIsConnected() then
             if state.wasConnected then
                 Config.log("error", "Lost connection to server")
@@ -189,18 +153,15 @@ local function IronmonConnect()
             end
             return false
         end
-        
-        -- Update connection state
+
         if not state.wasConnected then
             Config.log("info", "Connection established")
             state.wasConnected = true
         end
-        
-        -- Send the data
+
         local packet = FileManager.JsonLibrary.encode(data)
         comm.socketServerSend(packet)
-        
-        -- Check if send was successful
+
         if comm.socketServerSuccessful() then
             if Config.get("debug") then
                 Config.log("debug", "Sent: " .. data.type)
@@ -211,25 +172,20 @@ local function IronmonConnect()
             return false
         end
     end
-    
-    -- Initialize the extension
+
     function self.startup()
-        -- Initialize configuration
         Config.initialize()
-        
-        -- Log startup
+
         Config.log("info", string.format("Version %s successfully loaded.", self.version))
         Config.log("info", string.format("Using settings file: %s", Options and Options.FILES and Options.FILES["Settings File"] or "Unknown"))
-        
-        -- Check initial connection status
+
         if comm.socketServerIsConnected() then
             Config.log("info", "Connected to server: " .. (comm.socketServerGetInfo and comm.socketServerGetInfo() or "Connected"))
             state.wasConnected = true
         else
             Config.log("warn", "No connection to server - start your server application and restart BizHawk")
         end
-        
-        -- Send initialization event
+
         send(createEvent("init", {
             version = self.version,
             tracker_version = Main.TrackerVersion or "Unknown",
@@ -246,35 +202,26 @@ local function IronmonConnect()
                 itemTracking = Config.get("itemTracking")
             }
         }))
-        
-        -- Process initial seed if available
+
         if Main and Main.currentSeed then
             self.processSeed()
         end
-        
-        -- Initialize checkpoint flags
+
         for _, checkpoint in ipairs(Checkpoints) do
             state.checkpointsNotified[checkpoint] = false
         end
-        
-        -- Send initial team state
+
         if Config.isFeatureEnabled("teamUpdates") then
             self.processTeam()
         end
 
-        -- Initialize item tracking
         if Config.isFeatureEnabled("itemTracking") then
             state.lastItemSnapshot = self.deepCopyItems(TrackerAPI.getBagItems and TrackerAPI.getBagItems() or {})
         end
 
         state.initialized = true
-
-        -- Note: Location detection happens via periodic updates (onProgramUpdateTick)
-        -- to avoid sending mapId=0 before game data is populated
     end
-    
-    -- Process team changes
-    -- Create hash of Pokemon state (only meaningful changes, not HP/PP/status)
+
     local function hashPokemonTeamState(pokemon)
         if not pokemon or not pokemon.pokemonID then return nil end
 
@@ -283,7 +230,6 @@ local function IronmonConnect()
         local moveHash = ""
         if pokemon.moves then
             for i = 1, 4 do
-                -- pokemon.moves[i] is a table with { id, level, pp }, not just a number
                 moveHash = moveHash .. (pokemon.moves[i] and pokemon.moves[i].id or 0) .. ","
             end
         end
@@ -299,20 +245,17 @@ local function IronmonConnect()
     function self.processTeam()
         if not Config.isFeatureEnabled("teamUpdates") then return end
 
-        -- Check each party slot for changes
         for slot = 1, 6 do
             local pokemon = TrackerAPI.getPlayerPokemon(slot)
             if pokemon and pokemon.pokemonID > 0 then
                 local hash = hashPokemonTeamState(pokemon)
                 if hash ~= state.lastTeamHash[slot] then
-                    -- Team change detected!
                     local pokemonName = PokemonData.Pokemon[pokemon.pokemonID] and PokemonData.Pokemon[pokemon.pokemonID].name or "Unknown"
                     Config.log("info", string.format("Team slot %d updated: %s (Lv%d)", slot, pokemonName, pokemon.level))
                     self.sendTeamUpdate(slot, pokemon)
                     state.lastTeamHash[slot] = hash
                 end
             elseif state.lastTeamHash[slot] then
-                -- Pokemon was removed from this slot
                 send(createEvent("team_update", {
                     slot = slot,
                     pokemon = nil
@@ -321,8 +264,7 @@ local function IronmonConnect()
             end
         end
     end
-    
-    -- Send team update event
+
     function self.sendTeamUpdate(slot, pokemon)
         local pokemonData = {
             id = pokemon.pokemonID,
@@ -335,17 +277,16 @@ local function IronmonConnect()
             status = pokemon.status,
             item = pokemon.heldItem
         }
-        
-        -- Add moves if available
+
         if pokemon.moves then
             pokemonData.moves = {}
             for i = 1, 4 do
-                if pokemon.moves[i] and pokemon.moves[i] > 0 then
-                    local moveData = MoveData.Moves[pokemon.moves[i]]
+                if pokemon.moves[i] and pokemon.moves[i].id and pokemon.moves[i].id > 0 then
+                    local moveData = MoveData.Moves[pokemon.moves[i].id]
                     table.insert(pokemonData.moves, {
-                        id = pokemon.moves[i],
+                        id = pokemon.moves[i].id,
                         name = moveData and moveData.name or "Unknown",
-                        pp = pokemon.movePPs and pokemon.movePPs[i] or 0
+                        pp = pokemon.moves[i].pp or 0
                     })
                 end
             end
@@ -701,8 +642,8 @@ local function IronmonConnect()
             name = opposingPokemon.name or (PokemonData.Pokemon[opposingPokemon.pokemonID] and PokemonData.Pokemon[opposingPokemon.pokemonID].name) or "Unknown",
             level = opposingPokemon.level or 0,
             hp = {
-                current = opposingPokemon.hp or 0,
-                max = opposingPokemon.hpmax or 0
+                current = opposingPokemon.curHP or 0,
+                max = opposingPokemon.stats and opposingPokemon.stats.hp or 0
             }
         }
         
@@ -795,7 +736,7 @@ local function IronmonConnect()
                 state["player_hp_" .. playerMon.pokemonID] = playerMon.curHP
             end
             if opposingPokemon and opposingPokemon.pokemonID then
-                state["enemy_hp_" .. opposingPokemon.pokemonID] = opposingPokemon.hp
+                state["enemy_hp_" .. opposingPokemon.pokemonID] = opposingPokemon.curHP
             end
         end
 
@@ -839,6 +780,7 @@ local function IronmonConnect()
         end
 
         -- Send final battle_action event (the move that ended the battle)
+        -- This captures knockout moves that end battles before processBattleAnalytics runs again
         if Config.isFeatureEnabled("battleAnalytics") and Battle and state.lastBattleTurn and state.lastBattleTurn >= 1 then
             local attacker = Battle.attacker or 0
             local playerAttacked = (attacker == 0 or attacker == 2)
@@ -854,6 +796,19 @@ local function IronmonConnect()
             local formattedEnemyMon = self.formatPokemonData(enemyMon, false)
 
             if moveId > 0 and formattedPlayerMon and formattedEnemyMon then
+                -- Calculate damage from HP state tracking
+                local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
+                local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
+                local damageDealt = 0
+
+                if playerAttacked then
+                    local enemyPrevHP = state[enemyHPKey] or enemyMon.curHP
+                    damageDealt = enemyPrevHP - enemyMon.curHP
+                else
+                    local playerPrevHP = state[playerHPKey] or playerMon.curHP
+                    damageDealt = playerPrevHP - playerMon.curHP
+                end
+
                 local defenderTypes = { PokemonData.Pokemon[enemyMon.pokemonID].type1, PokemonData.Pokemon[enemyMon.pokemonID].type2 }
                 local attackerPokemonId = playerAttacked and playerMon.pokemonID or enemyMon.pokemonID
                 local formattedMove = self.formatMoveData(moveId, attackerPokemonId, defenderTypes)
@@ -862,7 +817,7 @@ local function IronmonConnect()
                     local finalActionData = {
                         turn = state.lastBattleTurn,
                         attacker = playerAttacked and "player" or "enemy",
-                        damageDealt = playerAttacked and (state["enemy_hp_turn_" .. state.lastBattleTurn] or 0) - (enemyMon.curHP or enemyMon.hp or 0) or (state["player_hp_turn_" .. state.lastBattleTurn] or 0) - playerMon.curHP,
+                        damageDealt = damageDealt,
                         playerMon = formattedPlayerMon,
                         enemyMon = formattedEnemyMon,
                         move = formattedMove
@@ -1028,110 +983,44 @@ local function IronmonConnect()
             totalTrainerEncounters,
             isFirstEncounter and "yes" or "no"))
     end
-    
-    --[[
-    ==================================================================================
-    ADVANCED BATTLE STATS - IMPLEMENTATION NOTES
-    ==================================================================================
 
-    The following stats are available via memory reading but not currently implemented:
-
-    1. CRITICAL HITS
-       - Location: gMoveResultFlags (GameSettings.gMoveResultFlags)
-       - Method: Memory.readbyte(GameSettings.gMoveResultFlags)
-       - Flag: Check bit 0x01 (MOVE_RESULT_CRITICAL_HIT)
-
-    2. MOVE MISS/ACCURACY
-       - Location: gMoveResultFlags (GameSettings.gMoveResultFlags)
-       - Method: Memory.readbyte(GameSettings.gMoveResultFlags)
-       - Flags:
-         * 0x02 = MOVE_RESULT_SUPER_EFFECTIVE
-         * 0x04 = MOVE_RESULT_NOT_VERY_EFFECTIVE
-         * 0x08 = MOVE_RESULT_DOESNT_AFFECT_FOE (immunity)
-         * 0x10 = MOVE_RESULT_ONE_HIT_KO
-         * 0x20 = MOVE_RESULT_FAILED (missed or failed)
-
-    3. STAT CHANGES (Attack/Defense/Speed/etc boosts)
-       - Location: gBattleMons + offsetBattlePokemonStatStages
-       - Method: Read stat stages for each mon
-       - Offsets: Program.Addresses.offsetBattlePokemonStatStages
-       - Format: 2 dwords (8 bytes) per Pokemon
-         * First dword: HP, ATK, DEF, SPEED (1 byte each)
-         * Second dword: SP.ATK, SP.DEF, ACCURACY, EVASION (1 byte each)
-       - Values: 6 = neutral, <6 = decreased, >6 = increased
-       - Implementation: Track previous values and detect changes
-
-    4. STATUS EFFECTS APPLIED
-       - Location: Pokemon status field
-       - Method: Tracker.getPokemon(slot, isOwn).status
-       - Values: 0 = none, non-zero = status condition
-       - Implementation: Track previous status and detect changes
-
-    5. ABILITY ACTIVATIONS
-       - Location: Tracked internally by Battle.trackAbilityChanges()
-       - Method: Would require hooking into Battle module's ability tracking
-       - Challenge: No direct API access, would need memory reading
-
-    6. MOVE USED (already available)
-       - Location: gBattleResults + offsetBattleResultsLastAttackerMove
-       - Method: Memory.readword(GameSettings.gBattleResults + Program.Addresses.offsetBattleResultsLastAttackerMove + attackerIndex)
-       - Note: This is what Tracker uses to record moves
-
-    To implement these:
-    - Add Memory.readbyte/readword/readdword calls in processBattleAnalytics()
-    - Track previous state to detect changes
-    - Add fields to battle_action event
-    ==================================================================================
-    ]]--
-
-    -- Process battle analytics during combat
     function self.processBattleAnalytics()
         if not Battle or not Battle.inActiveBattle() then return end
 
-        -- Track turn changes reliably by comparing turn counts
-        -- When turn changes from N to N+1, we're processing turn N's completed actions
         local currentTurn = Battle.turnCount
         if not state.lastBattleTurn then state.lastBattleTurn = -1 end
 
         if currentTurn == state.lastBattleTurn then return end
 
-        -- Save the previous turn number (the turn we're about to process)
         local completedTurn = state.lastBattleTurn
         state.lastBattleTurn = currentTurn
 
-        -- Skip turn 0 or negative (battle start, no actions yet)
         if completedTurn < 1 then return end
 
-        -- Get active Pokemon
         local playerMon = TrackerAPI.getPlayerPokemon(Battle.Combatants and Battle.Combatants.LeftOwn or 1)
         local enemyMon = Tracker.getPokemon(Battle.Combatants and Battle.Combatants.LeftOther or 1, false)
 
         if not playerMon or not enemyMon then return end
 
-        -- Determine who attacked (Battle.attacker: 0/2 = player, 1/3 = enemy)
-        local attacker = Battle.attacker or 0
+        local attacker = Battle.attacker or 0  -- 0/2 = player, 1/3 = enemy
         local playerAttacked = (attacker == 0 or attacker == 2)
         local enemyAttacked = (attacker == 1 or attacker == 3)
 
-        -- Get the actual move IDs that were used this turn
         local playerMoveId = playerAttacked and self.readPlayerMoveId(attacker) or 0
         local enemyMoveId = enemyAttacked and Battle.lastEnemyMoveId or 0
 
-        -- Check for HP changes (damage dealt/received)
         local playerHPKey = "player_hp_" .. (playerMon.pokemonID or 0)
         local enemyHPKey = "enemy_hp_" .. (enemyMon.pokemonID or 0)
 
         local playerPrevHP = state[playerHPKey] or (playerMon.curHP or 0)
-        local enemyPrevHP = state[enemyHPKey] or (enemyMon.hp or 0)
+        local enemyPrevHP = state[enemyHPKey] or (enemyMon.curHP or 0)
 
         local playerDamage = playerPrevHP - (playerMon.curHP or 0)
-        local enemyDamage = enemyPrevHP - (enemyMon.hp or 0)
+        local enemyDamage = enemyPrevHP - (enemyMon.curHP or 0)
 
-        -- Update HP tracking
         state[playerHPKey] = playerMon.curHP
-        state[enemyHPKey] = enemyMon.hp
+        state[enemyHPKey] = enemyMon.curHP
 
-        -- Send battle_action event for detailed play-by-play
         local actionData = {
             turn = completedTurn,
             attacker = playerAttacked and "player" or "enemy",
@@ -1140,7 +1029,6 @@ local function IronmonConnect()
             enemyMon = self.formatPokemonData(enemyMon, false)
         }
 
-        -- Add move details if damage was dealt
         if playerAttacked and enemyDamage > 0 and playerMoveId > 0 then
             local defenderTypes = { PokemonData.Pokemon[enemyMon.pokemonID].type1, PokemonData.Pokemon[enemyMon.pokemonID].type2 }
             actionData.move = self.formatMoveData(playerMoveId, playerMon.pokemonID, defenderTypes)
@@ -1151,9 +1039,7 @@ local function IronmonConnect()
 
         send(createEvent("battle_action", actionData))
 
-        -- Send damage event if significant damage occurred
         if playerDamage > 0 or enemyDamage > 0 then
-            -- Build move effectiveness data using actual move IDs
             local playerEffectiveness = nil
             local enemyEffectiveness = nil
 
@@ -1208,7 +1094,6 @@ local function IronmonConnect()
                 }
             }))
 
-            -- Track move effectiveness patterns
             if Config.isFeatureEnabled("moveTracking") then
                 if playerEffectiveness then
                     self.trackMoveEffectiveness(playerMon, enemyMon, playerEffectiveness, "player")
@@ -1219,32 +1104,26 @@ local function IronmonConnect()
             end
         end
 
-        -- Track moves if enabled
         if Config.isFeatureEnabled("moveTracking") then
             self.trackBattleMoves(enemyMon)
         end
     end
-    
-    -- Track moves used by enemy Pokemon
+
     function self.trackBattleMoves(enemyMon)
         if not enemyMon or not enemyMon.pokemonID then return end
-        
-        -- Get known moves for this Pokemon
+
         local knownMoves = Tracker.getMoves and Tracker.getMoves(enemyMon.pokemonID, enemyMon.level) or {}
-        
-        -- Check if we have new move data to report
+
         local moveListKey = "moves_" .. enemyMon.pokemonID .. "_" .. (enemyMon.level or 0)
         local previousMoveCount = state[moveListKey] or 0
         local currentMoveCount = 0
-        
-        -- Count valid moves
+
         for _, move in pairs(knownMoves) do
             if move and move.id and move.id > 0 then
                 currentMoveCount = currentMoveCount + 1
             end
         end
-        
-        -- If we have new moves, send an update
+
         if currentMoveCount > previousMoveCount then
             local moveList = {}
             for _, move in pairs(knownMoves) do
@@ -1261,8 +1140,7 @@ local function IronmonConnect()
                     })
                 end
             end
-            
-            -- Send move history event
+
             send(createEvent("move_history", {
                 pokemon = {
                     id = enemyMon.pokemonID,
@@ -1280,16 +1158,14 @@ local function IronmonConnect()
                 PokemonData.Pokemon[enemyMon.pokemonID] and PokemonData.Pokemon[enemyMon.pokemonID].name or "Pokemon"))
         end
     end
-    
-    -- Track move effectiveness patterns for analysis
+
     function self.trackMoveEffectiveness(attacker, defender, effectivenessData, attackerType)
         if not effectivenessData then return end
         
         local effectiveness = effectivenessData.effectiveness or 1.0
         local moveType = effectivenessData.moveType
         local moveName = effectivenessData.moveName
-        
-        -- Only report significant effectiveness (not neutral)
+
         if effectiveness ~= 1.0 then
             local defenderData = PokemonData.Pokemon[defender.pokemonID]
             local defenderTypes = {}
@@ -1325,8 +1201,7 @@ local function IronmonConnect()
             }))
         end
     end
-    
-    -- Get human-readable effectiveness description
+
     function self.getEffectivenessDescription(multiplier)
         if multiplier <= 0 then
             return "No effect"
@@ -1342,17 +1217,13 @@ local function IronmonConnect()
             return "Normal effectiveness"
         end
     end
-    
-    -- Calculate move effectiveness between attacker and defender
+
     function self.calculateMoveEffectiveness(attacker, defender)
         if not attacker or not defender then return nil end
-        
-        -- We don't know which specific move was used, so we'll calculate
-        -- effectiveness for all known moves and find the most likely one
+
         local moves = Tracker.getMoves and Tracker.getMoves(attacker.pokemonID, attacker.level) or {}
         local effectivenessOptions = {}
-        
-        -- Get defender's types
+
         local defenderTypes = {}
         local pokemonData = PokemonData.Pokemon[defender.pokemonID]
         if pokemonData then
@@ -1361,8 +1232,7 @@ local function IronmonConnect()
         else
             return nil
         end
-        
-        -- Calculate effectiveness for each known move
+
         for _, move in pairs(moves) do
             if move and move.id and move.id > 0 then
                 local moveData = MoveData.Moves[move.id]
@@ -1382,35 +1252,29 @@ local function IronmonConnect()
                 end
             end
         end
-        
-        -- If we have move options, return the first one (could be enhanced to pick most likely)
+
         if #effectivenessOptions > 0 then
             return effectivenessOptions[1]
         end
-        
+
         return nil
     end
-    
-    -- Calculate type effectiveness using manual calculation
-    -- Note: Utils.netEffectiveness requires a move object and crashes with nil
+
     function self.getTypeEffectiveness(moveType, defenderTypes)
         return self.calculateTypeEffectivenessManual(moveType, defenderTypes)
     end
-    
-    -- Manual type effectiveness calculation as fallback
+
     function self.calculateTypeEffectivenessManual(moveType, defenderTypes)
         if not MoveData or not MoveData.TypeToEffectiveness then
-            return 1.0  -- Default to neutral if no data
+            return 1.0
         end
 
         local total = 1.0
 
-        -- Check effectiveness against first type
         if MoveData.TypeToEffectiveness[moveType] and MoveData.TypeToEffectiveness[moveType][defenderTypes[1]] then
             total = total * MoveData.TypeToEffectiveness[moveType][defenderTypes[1]]
         end
 
-        -- Check effectiveness against second type if different
         if defenderTypes[2] and defenderTypes[2] ~= defenderTypes[1] then
             if MoveData.TypeToEffectiveness[moveType] and MoveData.TypeToEffectiveness[moveType][defenderTypes[2]] then
                 total = total * MoveData.TypeToEffectiveness[moveType][defenderTypes[2]]
@@ -1420,8 +1284,7 @@ local function IronmonConnect()
         return total
     end
 
-    -- Helper: Format Pokemon data for events
-    -- Handles differences between player Pokemon (curHP/stats.hp) and enemy Pokemon (hp/hpmax)
+    -- Both player and enemy Pokemon use the same structure: curHP and stats.hp
     function self.formatPokemonData(pokemon, isOwn)
         if not pokemon or not pokemon.pokemonID or pokemon.pokemonID == 0 then
             return nil
@@ -1430,14 +1293,13 @@ local function IronmonConnect()
         return {
             id = pokemon.pokemonID,
             name = PokemonData.Pokemon[pokemon.pokemonID] and PokemonData.Pokemon[pokemon.pokemonID].name or "Unknown",
-            hp = isOwn and pokemon.curHP or pokemon.hp or 0,
-            maxHP = isOwn and (pokemon.stats and pokemon.stats.hp or 0) or pokemon.hpmax or 0,
+            hp = pokemon.curHP or 0,
+            maxHP = pokemon.stats and pokemon.stats.hp or 0,
             level = pokemon.level or 0,
             status = pokemon.status or 0
         }
     end
 
-    -- Helper: Format move data with effectiveness and STAB
     function self.formatMoveData(moveId, attackerPokemonId, defenderTypes)
         if not moveId or moveId == 0 then
             return nil
@@ -1461,7 +1323,6 @@ local function IronmonConnect()
         }
     end
 
-    -- Helper: Read player move ID from memory
     function self.readPlayerMoveId(attacker)
         if not Program or not Program.Addresses then
             return 0
@@ -1470,8 +1331,7 @@ local function IronmonConnect()
         local attackerIndex = (attacker % 2) * Program.Addresses.sizeofLastAttackerMove
         return Memory.readword(GameSettings.gBattleResults + Program.Addresses.offsetBattleResultsLastAttackerMove + attackerIndex)
     end
-    
-    -- Check if a Pokemon gets STAB for a move type
+
     function self.hasSTAB(pokemonID, moveType)
         local pokemonData = PokemonData.Pokemon[pokemonID]
         if pokemonData then
@@ -1479,8 +1339,7 @@ local function IronmonConnect()
         end
         return false
     end
-    
-    -- Checkpoint detection logic
+
     function self.determineSplitChange()
         local defeatedTrainers = Program.getDefeatedTrainersByLocation()
         local currentTrainers = {}
@@ -1495,12 +1354,7 @@ local function IronmonConnect()
                 currentTrainers[lookup.class.name] = true
             end
         end
-        
-        -- CHECKPOINT DETECTION STRATEGY:
-        -- Use trainer IDs for all checkpoint detection (most reliable)
-        -- Trainer ID mappings defined at module level (TRAINER_ID_CHECKPOINTS)
 
-        -- Check trainer IDs for checkpoints
         for checkpointName, trainerIds in pairs(TRAINER_ID_CHECKPOINTS) do
             for _, trainerId in ipairs(trainerIds) do
                 if Program.hasDefeatedTrainer and Program.hasDefeatedTrainer(trainerId) then
@@ -1510,8 +1364,7 @@ local function IronmonConnect()
                 end
             end
         end
-        
-        -- Badge detection
+
         local badges = TrackerAPI.getBadgeList()
         local badgeMapping = {
             [1] = "BROCK", [2] = "MISTY", [3] = "SURGE", [4] = "ERIKA",
@@ -1527,12 +1380,9 @@ local function IronmonConnect()
         
         return nil
     end
-    
-    -- Hook: Called when unloading
+
     function self.unload()
         Config.log("info", "Shutting down " .. self.name)
-
-        -- Clean up
         state.initialized = false
     end
 
